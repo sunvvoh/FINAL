@@ -17,8 +17,8 @@ const imageList = {
     ball8Weight5: 'images/8BALL WEIGHT 5.png',
     ball8Weight10: 'images/8BALL WEIGHT 10.png',
     balanced: 'images/BALANCED.png',
-    pan: 'images/PAN.png'
-    // anvil: 'images/ANVIL.png' // Uncomment when anvil image is added
+    pan: 'images/PAN.png',
+    anvil: 'images/ANVIL.png'
 };
 
 function preloadImages(callback) {
@@ -309,29 +309,14 @@ class PhysicsObject {
                 panY = dupStation.y - dupStation.panHeight / 2;
             }
 
-            // Update position based on pan center + stored offset
-            // For left/right pans, also apply rotation to the offset
-            if (this.onPan === 'left' || this.onPan === 'right') {
-                // Apply rotation transformation to the offset
-                const rotatedOffsetX = Math.cos(-scale.angle) * this.panOffsetX - Math.sin(-scale.angle) * this.panOffsetY;
-                const rotatedOffsetY = Math.sin(-scale.angle) * this.panOffsetX + Math.cos(-scale.angle) * this.panOffsetY;
-
-                if (this.isCircle) {
-                    this.x = panX + rotatedOffsetX;
-                    this.y = panY - panHeight/2 - this.radius + rotatedOffsetY;
-                } else {
-                    this.x = panX + rotatedOffsetX - this.width/2;
-                    this.y = panY - panHeight/2 - this.height + rotatedOffsetY;
-                }
+            // Update position based on pan center + stored horizontal offset
+            // Pans stay level (don't rotate), so no rotation transform needed
+            if (this.isCircle) {
+                this.x = panX + this.panOffsetX;
+                this.y = panY - panHeight/2 - this.radius;
             } else {
-                // Duplication pan doesn't rotate
-                if (this.isCircle) {
-                    this.x = panX + this.panOffsetX;
-                    this.y = panInfo.panTop - this.radius;
-                } else {
-                    this.x = panX + this.panOffsetX - this.width/2;
-                    this.y = panInfo.panTop - this.height;
-                }
+                this.x = panX + this.panOffsetX - this.width/2;
+                this.y = panY - panHeight/2 - this.height;
             }
 
             this.vy = 0;
@@ -409,20 +394,20 @@ class PhysicsObject {
                 this.y = groundY - this.height;
             }
 
-            // Anvil impact detection (commented out until anvil is added)
-            // if (this.type === 'anvil' && this.vy > 200) {
-            //     // Trigger camera shake based on fall speed
-            //     const shakeIntensity = Math.min(this.vy / 500, 1.0);
-            //     triggerCameraShake(shakeIntensity);
-            //
-            //     // Make other grounded objects bounce
-            //     for (const obj of objects) {
-            //         if (obj !== this && obj.grounded && obj.onPan === null) {
-            //             obj.vy = -200 * shakeIntensity; // Bounce up
-            //             obj.grounded = false;
-            //         }
-            //     }
-            // }
+            // Anvil impact detection
+            if (this.type === 'anvil' && this.vy > 200) {
+                // Trigger camera shake based on fall speed
+                const shakeIntensity = Math.min(this.vy / 500, 1.0);
+                triggerCameraShake(shakeIntensity);
+
+                // Make other grounded objects bounce
+                for (const obj of objects) {
+                    if (obj !== this && obj.grounded && obj.onPan === null) {
+                        obj.vy = -200 * shakeIntensity; // Bounce up
+                        obj.grounded = false;
+                    }
+                }
+            }
 
             if (this.vy > 50) {
                 this.vy = -this.vy * 0.3;
@@ -540,11 +525,10 @@ class PhysicsObject {
         }
 
         if (this.type === 'anvil') {
-            // Uncomment when anvil image is added
-            // if (images.anvil) {
-            //     ctx.drawImage(images.anvil, this.x, this.y, this.width, this.height);
-            //     return;
-            // }
+            if (images.anvil) {
+                ctx.drawImage(images.anvil, this.x, this.y, this.width, this.height);
+                return;
+            }
 
             // Fallback rendering
             ctx.fillStyle = this.color;
@@ -611,6 +595,7 @@ function generateLevel(levelNum) {
         const numFeathers = 2;
         const numTissueBoxes = 2;
         const numMagic8Balls = 2;
+        const numAnvils = 1;
 
         for (let i = 0; i < numFeathers; i++) {
             movableObjects.push(createFeather());
@@ -621,11 +606,15 @@ function generateLevel(levelNum) {
         for (let i = 0; i < numMagic8Balls; i++) {
             movableObjects.push(createMagic8Ball());
         }
+        for (let i = 0; i < numAnvils; i++) {
+            movableObjects.push(createAnvil());
+        }
     } else {
         // Normal mode: progressive introduction
         // Levels 1-3: Only feathers
-        // Levels 4+: Feathers + tissue boxes
-        // Levels 7+: Feathers + tissue boxes + magic 8 balls
+        // Levels 4-6: Feathers + tissue boxes
+        // Levels 7-9: Feathers + tissue boxes + magic 8 balls
+        // Levels 10+: All objects including anvil
 
         const numFeathers = 1 + Math.floor(levelNum / 2);
         for (let i = 0; i < numFeathers; i++) {
@@ -643,6 +632,13 @@ function generateLevel(levelNum) {
             const numMagic8Balls = 1 + Math.floor((levelNum - 6) / 4);
             for (let i = 0; i < numMagic8Balls; i++) {
                 movableObjects.push(createMagic8Ball());
+            }
+        }
+
+        if (levelNum >= 10) {
+            const numAnvils = 1;
+            for (let i = 0; i < numAnvils; i++) {
+                movableObjects.push(createAnvil());
             }
         }
     }
@@ -707,9 +703,9 @@ function createTissue(x, y, dropped = false) {
 }
 
 function createAnvil() {
-    const width = 120; // Will scale to 1.5x when image is added
-    const height = 120;
-    const weight = 50; // Very heavy!
+    const width = 180; // 120 * 1.5
+    const height = 180; // 120 * 1.5
+    const weight = 10; // Heavy but balanced
     const anvil = new PhysicsObject(0, 0, width, height, weight, '#3a3a3a', false, false, 'anvil');
     anvil.anvilSlipSpeed = 150; // Pixels per second it slips down
     return anvil;
@@ -801,15 +797,7 @@ function onPointerDown(e) {
 
         if (levelComplete) return;
 
-        // Check if clicking on screen
-        if (pos.x >= dupScreen.x - dupScreen.width/2 && 
-            pos.x <= dupScreen.x + dupScreen.width/2 &&
-            pos.y >= dupScreen.y - dupScreen.height/2 && 
-            pos.y <= dupScreen.y + dupScreen.height/2) {
-            dupScreen.active = true;
-            return;
-        }
-
+        // Duplicator removed
         // Check objects
         for (let i = objects.length - 1; i >= 0; i--) {
             if (objects[i].containsPoint(pos.x, pos.y) && !objects[i].isFixed) {
@@ -834,12 +822,9 @@ function onPointerDown(e) {
                         dragOffsetY = pos.y - draggedObject.y;
                     }
                 }
-                dupScreen.active = false;
                 return;
             }
         }
-
-        dupScreen.active = false;
     }
 }
 
@@ -869,15 +854,15 @@ function onPointerMove(e) {
         draggedObject.x = pos.x - dragOffsetX;
         draggedObject.y = pos.y - dragOffsetY;
 
-        // Anvil: slowly slips down off cursor (not implemented until image is added)
-        // if (draggedObject.type === 'anvil') {
-        //     dragOffsetY -= draggedObject.anvilSlipSpeed * 0.016; // Slip down
-        //     if (dragOffsetY < -draggedObject.height) {
-        //         // Anvil has slipped off completely
-        //         draggedObject.isDragging = false;
-        //         draggedObject.anvilFalling = true;
-        //     }
-        // }
+        // Anvil: slowly slips down off cursor
+        if (draggedObject.type === 'anvil') {
+            dragOffsetY -= draggedObject.anvilSlipSpeed * 0.016; // Slip down
+            if (dragOffsetY < -draggedObject.height) {
+                // Anvil has slipped off completely
+                draggedObject.isDragging = false;
+                draggedObject.anvilFalling = true;
+            }
+        }
 
         // Magic 8 ball shake detection (time-based)
         if (draggedObject.type === 'magic8ball') {
@@ -954,20 +939,21 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (dupScreen.active) {
-        if (e.key === 'Enter') {
-            spawnDuplicates();
-            e.preventDefault();
-        } else if (e.key === 'Escape') {
-            dupScreen.active = false;
-            dupScreen.input = '';
-        } else if (e.key === 'Backspace') {
-            dupScreen.input = dupScreen.input.slice(0, -1);
-            e.preventDefault();
-        } else if (e.key.match(/^[0-9]$/) && dupScreen.input.length < 2) {
-            dupScreen.input += e.key;
-        }
-    }
+    // Duplicator removed
+    // if (dupScreen.active) {
+    //     if (e.key === 'Enter') {
+    //         spawnDuplicates();
+    //         e.preventDefault();
+    //     } else if (e.key === 'Escape') {
+    //         dupScreen.active = false;
+    //         dupScreen.input = '';
+    //     } else if (e.key === 'Backspace') {
+    //         dupScreen.input = dupScreen.input.slice(0, -1);
+    //         e.preventDefault();
+    //     } else if (e.key.match(/^[0-9]$/) && dupScreen.input.length < 2) {
+    //         dupScreen.input += e.key;
+    //     }
+    // }
 });
 
 function spawnDuplicates() {
@@ -1487,7 +1473,7 @@ function drawGame() {
     drawGround();
     drawBalancedText(); // Draw balanced text in background
     drawScale();
-    drawDuplicationStation();
+    // drawDuplicationStation(); // Removed duplicator
     for (const obj of objects) {
         obj.draw();
     }
@@ -1605,7 +1591,7 @@ function animate() {
             }
         }
 
-        checkDuplicationPan();
+        // checkDuplicationPan(); // Removed duplicator
         updateScale(dt);
         drawGame();
         applyGrainTexture(0.04);
