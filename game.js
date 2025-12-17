@@ -158,24 +158,62 @@ let cameraShakeX = 0;
 let cameraShakeY = 0;
 let cameraShakeDecay = 0;
 
+// Static grain texture cache
+let grainTextureCache = {};
+const grainTextureSize = 512; // Size of grain texture tile
+
+// Generate static grain texture pattern
+function generateStaticGrainTexture(width, height, alpha = 0.12) {
+    const key = `${width}x${height}`;
+
+    // Return cached texture if available
+    if (grainTextureCache[key]) {
+        return grainTextureCache[key];
+    }
+
+    // Create off-screen canvas for grain texture
+    const grainCanvas = document.createElement('canvas');
+    grainCanvas.width = width;
+    grainCanvas.height = height;
+    const grainCtx = grainCanvas.getContext('2d');
+
+    // Create grain pattern
+    const imageData = grainCtx.createImageData(width, height);
+    const pixels = imageData.data;
+
+    for (let i = 0; i < pixels.length; i += 4) {
+        const noise = (Math.random() - 0.5) * 255 * alpha;
+        pixels[i] = 128 + noise;       // R
+        pixels[i + 1] = 128 + noise;   // G
+        pixels[i + 2] = 128 + noise;   // B
+        pixels[i + 3] = 255;           // A
+    }
+
+    grainCtx.putImageData(imageData, 0, 0);
+
+    // Cache the grain texture
+    grainTextureCache[key] = grainCanvas;
+    return grainCanvas;
+}
+
+// Apply static grain texture to an area
+function applyStaticGrainTexture(x, y, width, height) {
+    const grainTexture = generateStaticGrainTexture(Math.ceil(width), Math.ceil(height));
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = 0.6;
+    ctx.drawImage(grainTexture, Math.floor(x), Math.floor(y), width, height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+}
+
 // Objects array
 let objects = [];
 let objectIdCounter = 0;
 
-// Color palette for objects - Modernist muted/pastel tones
+// Color palette for objects - Bold modernist colors
 const objectColors = [
-    '#2d2d2d', // Black
-    '#5a8a8a', // Muted teal
-    '#d4a574', // Sand/tan
-    '#8b7d7d', // Gray-brown
-    '#c97b63', // Muted coral
-    '#7a9d9d', // Sage gray
-    '#b8a89a', // Warm gray
-    '#a5a5a5', // Light gray
-    '#6b8e8e', // Dark teal
-    '#d8c3a5', // Beige
-    '#8e7e7e', // Mauve gray
-    '#5d7a7a'  // Deep teal-gray
+    '#ED375E', // Red/pink
+    '#D86430'  // Orange
 ];
 
 // Physics object class
@@ -539,24 +577,20 @@ class PhysicsObject {
             return;
         }
 
-        // Draw normal objects with shapes and grainy texture
+        // Draw normal objects with shapes and static grainy texture
         ctx.fillStyle = this.color;
         if (this.isCircle) {
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Apply grainy texture to circle
+            // Apply static grainy texture to circle
             const boundingX = Math.floor(this.x - this.radius);
             const boundingY = Math.floor(this.y - this.radius);
             const boundingSize = Math.ceil(this.radius * 2);
-            applyLocalGrainTexture(boundingX, boundingY, boundingSize, boundingSize, 0.12);
+            applyStaticGrainTexture(boundingX, boundingY, boundingSize, boundingSize);
 
-            // Subtle border
-            ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(0,0,0,0.2)';
-            ctx.lineWidth = this.isFixed ? 3 : 1.5;
-            ctx.stroke();
-
+            // Fixed object indicator (no border for normal objects)
             if (this.isFixed) {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius * 0.3, 0, Math.PI * 2);
@@ -567,15 +601,11 @@ class PhysicsObject {
         } else {
             ctx.fillRect(this.x, this.y, this.width, this.height);
 
-            // Apply grainy texture to rectangle
-            applyLocalGrainTexture(Math.floor(this.x), Math.floor(this.y),
-                                   Math.ceil(this.width), Math.ceil(this.height), 0.12);
+            // Apply static grainy texture to rectangle
+            applyStaticGrainTexture(Math.floor(this.x), Math.floor(this.y),
+                                   Math.ceil(this.width), Math.ceil(this.height));
 
-            // Subtle border
-            ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(0,0,0,0.2)';
-            ctx.lineWidth = this.isFixed ? 3 : 1.5;
-            ctx.strokeRect(this.x, this.y, this.width, this.height);
-
+            // Fixed object indicator (no border for normal objects)
             if (this.isFixed) {
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
@@ -819,7 +849,15 @@ function onPointerDown(e) {
 
         if (levelComplete) return;
 
-        // Duplicator removed
+        // Check if clicking on duplicator screen
+        if (pos.x >= dupScreen.x - dupScreen.width/2 &&
+            pos.x <= dupScreen.x + dupScreen.width/2 &&
+            pos.y >= dupScreen.y - dupScreen.height/2 &&
+            pos.y <= dupScreen.y + dupScreen.height/2) {
+            dupScreen.active = true;
+            return;
+        }
+
         // Check objects
         for (let i = objects.length - 1; i >= 0; i--) {
             if (objects[i].containsPoint(pos.x, pos.y) && !objects[i].isFixed) {
@@ -844,9 +882,12 @@ function onPointerDown(e) {
                         dragOffsetY = pos.y - draggedObject.y;
                     }
                 }
+                dupScreen.active = false;
                 return;
             }
         }
+
+        dupScreen.active = false;
     }
 }
 
@@ -961,21 +1002,20 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Duplicator removed
-    // if (dupScreen.active) {
-    //     if (e.key === 'Enter') {
-    //         spawnDuplicates();
-    //         e.preventDefault();
-    //     } else if (e.key === 'Escape') {
-    //         dupScreen.active = false;
-    //         dupScreen.input = '';
-    //     } else if (e.key === 'Backspace') {
-    //         dupScreen.input = dupScreen.input.slice(0, -1);
-    //         e.preventDefault();
-    //     } else if (e.key.match(/^[0-9]$/) && dupScreen.input.length < 2) {
-    //         dupScreen.input += e.key;
-    //     }
-    // }
+    if (dupScreen.active) {
+        if (e.key === 'Enter') {
+            spawnDuplicates();
+            e.preventDefault();
+        } else if (e.key === 'Escape') {
+            dupScreen.active = false;
+            dupScreen.input = '';
+        } else if (e.key === 'Backspace') {
+            dupScreen.input = dupScreen.input.slice(0, -1);
+            e.preventDefault();
+        } else if (e.key.match(/^[0-9]$/) && dupScreen.input.length < 2) {
+            dupScreen.input += e.key;
+        }
+    }
 });
 
 function spawnDuplicates() {
@@ -1495,7 +1535,7 @@ function drawGame() {
     drawGround();
     drawBalancedText(); // Draw balanced text in background
     drawScale();
-    // drawDuplicationStation(); // Removed duplicator
+    drawDuplicationStation();
     for (const obj of objects) {
         obj.draw();
     }
@@ -1628,7 +1668,7 @@ function animate() {
             }
         }
 
-        // checkDuplicationPan(); // Removed duplicator
+        checkDuplicationPan();
         updateScale(dt);
         drawGame();
         applyGrainTexture(0.04);
