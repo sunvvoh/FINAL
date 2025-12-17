@@ -10,10 +10,14 @@ const imageList = {
     tissueBoxFull: 'images/TISSUE BOX (WITH TISSUE).png',
     tissueBoxGrabbed: 'images/TISSUE BOX (TISSUE GRABBED).png',
     tissueBoxEmpty: 'images/TISSUE BOX (TISSUE GONE).png',
+    tissue: 'images/TISSUE.png',
+    tissueDropped: 'images/TISSUE DROPPED.png',
     ball8Mystery: 'images/8BALL MYSTERY WEIGHT.png',
     ball8Weight1: 'images/8BALL WEIGHT 1.png',
     ball8Weight5: 'images/8BALL WEIGHT 5.png',
-    ball8Weight10: 'images/8BALL WEIGHT 10.png'
+    ball8Weight10: 'images/8BALL WEIGHT 10.png',
+    balanced: 'images/BALANCED.png',
+    pan: 'images/PAN.png'
 };
 
 function preloadImages(callback) {
@@ -95,11 +99,13 @@ function getRightPanY() {
 }
 
 function getLeftPanX() {
-    return scale.x - scale.armLength;
+    const beamY = scale.baseY - scale.pillarHeight + 50;
+    return scale.x + Math.cos(-scale.angle) * (-scale.armLength);
 }
 
 function getRightPanX() {
-    return scale.x + scale.armLength;
+    const beamY = scale.baseY - scale.pillarHeight + 50;
+    return scale.x + Math.cos(-scale.angle) * scale.armLength;
 }
 
 // Duplication station
@@ -141,6 +147,10 @@ let isBalanced = false;
 let levelComplete = false;
 const balanceThreshold = 0.02;
 const balanceTimeRequired = 1.0;
+
+// Balanced text fade-in
+let balancedFadeAlpha = 0;
+const balancedFadeDuration = 2.0;
 
 // Objects array
 let objects = [];
@@ -189,11 +199,14 @@ class PhysicsObject {
         // Tissue box properties
         this.tissuesRemaining = 5;
         this.tissueBeingPulled = false;
+        this.tissueGrabStartTime = 0;
+        this.tissuePulled = false;
 
         // Magic 8 ball properties
         this.ball8State = 'mystery'; // 'mystery', 'weight1', 'weight5', 'weight10'
-        this.shakeIntensity = 0;
-        this.lastShakeTime = 0;
+        this.shakeTime = 0; // Time spent shaking
+        this.isShaking = false;
+        this.lastWeightChangeTime = 0;
     }
 
     get radius() {
@@ -287,8 +300,8 @@ class PhysicsObject {
             return;
         }
 
-        // Apply gravity (reduced for feathers)
-        if (this.type === 'feather') {
+        // Apply gravity (reduced for feathers and tissues)
+        if (this.type === 'feather' || this.type === 'tissue' || this.type === 'tissueDropped') {
             this.vy += gravity * dt * 0.15; // Much slower fall
             // Add sway motion
             this.swayPhase += this.swaySpeed * dt;
@@ -299,14 +312,11 @@ class PhysicsObject {
             this.vy *= 0.92; // Floaty
         } else {
             this.vy += gravity * dt;
+            this.vx *= 0.99;
         }
 
         this.x += this.vx * dt;
         this.y += this.vy * dt;
-
-        if (this.type !== 'feather') {
-            this.vx *= 0.99;
-        }
 
         const objectTop = this.isCircle ? this.y - this.radius : this.y;
 
@@ -394,6 +404,16 @@ class PhysicsObject {
             return;
         }
 
+        if (this.type === 'tissue' && images.tissue) {
+            ctx.drawImage(images.tissue, this.x, this.y, this.width, this.height);
+            return;
+        }
+
+        if (this.type === 'tissueDropped' && images.tissueDropped) {
+            ctx.drawImage(images.tissueDropped, this.x, this.y, this.width, this.height);
+            return;
+        }
+
         if (this.type === 'tissuebox') {
             let tissueImg = images.tissueBoxFull;
             if (this.tissueBeingPulled && images.tissueBoxGrabbed) {
@@ -461,6 +481,7 @@ function generateLevel(levelNum) {
     balanceTimer = 0;
     isBalanced = false;
     levelComplete = false;
+    balancedFadeAlpha = 0;
     scale.angle = 0;
     scale.targetAngle = 0;
     scale.angleVelocity = 0;
@@ -640,6 +661,13 @@ function createMagic8Ball() {
     return new PhysicsObject(0, 0, size, size, 5, '#2d2d2d', true, false, 'magic8ball');
 }
 
+function createTissue(x, y, dropped = false) {
+    const width = 60;
+    const height = 60;
+    const tissue = new PhysicsObject(x, y, width, height, 0.05, '#f5f5f5', false, false, dropped ? 'tissueDropped' : 'tissue');
+    return tissue;
+}
+
 // Restart function
 function restart() {
     generateLevel(currentLevel);
@@ -649,6 +677,9 @@ function restart() {
 let draggedObject = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+
+// Tissue pulling state
+let pulledTissue = null; // The floating tissue object being pulled
 
 // Button definitions
 const buttons = {
@@ -735,23 +766,17 @@ function onPointerDown(e) {
         // Check objects
         for (let i = objects.length - 1; i >= 0; i--) {
             if (objects[i].containsPoint(pos.x, pos.y) && !objects[i].isFixed) {
-                // Special interaction: Tissue box (Shift+Click or Right-click to pull tissue)
-                if (objects[i].type === 'tissuebox' && (e.shiftKey || e.button === 2)) {
-                    if (objects[i].tissuesRemaining > 0) {
-                        objects[i].tissuesRemaining--;
-                        objects[i].mass = 3 - (5 - objects[i].tissuesRemaining) * 0.5; // Reduce weight
-                        objects[i].tissueBeingPulled = true;
-                        setTimeout(() => {
-                            objects[i].tissueBeingPulled = false;
-                        }, 200);
-                    }
-                    return;
-                }
-
                 draggedObject = objects[i];
                 draggedObject.isDragging = true;
                 draggedObject.grounded = false;
                 draggedObject.onPan = null;
+
+                // Tissue box: start timer for grab detection
+                if (draggedObject.type === 'tissuebox' && draggedObject.tissuesRemaining > 0) {
+                    draggedObject.tissueGrabStartTime = performance.now();
+                    draggedObject.tissuePulled = false;
+                }
+
                 if (draggedObject.isCircle) {
                     dragOffsetX = pos.x - draggedObject.x;
                     dragOffsetY = pos.y - draggedObject.y;
@@ -773,37 +798,46 @@ function onPointerMove(e) {
     const pos = getEventPos(e);
     const oldX = draggedObject.x;
     const oldY = draggedObject.y;
+
+    // Tissue box pull detection
+    if (draggedObject.type === 'tissuebox' && !draggedObject.tissuePulled) {
+        const holdTime = performance.now() - draggedObject.tissueGrabStartTime;
+        const moved = Math.abs(draggedObject.x - (pos.x - dragOffsetX)) > 5 ||
+                     Math.abs(draggedObject.y - (pos.y - dragOffsetY)) > 5;
+
+        if (holdTime > 200 && !moved) {
+            // Show grabbed state
+            draggedObject.tissueBeingPulled = true;
+        } else if (holdTime > 200 && moved && draggedObject.tissueBeingPulled) {
+            // Pull tissue out!
+            draggedObject.tissuePulled = true;
+            draggedObject.tissuesRemaining--;
+            draggedObject.mass = Math.max(0.5, 3 - (5 - draggedObject.tissuesRemaining) * 0.5);
+            draggedObject.tissueBeingPulled = false;
+
+            // Create floating tissue at cursor
+            pulledTissue = createTissue(pos.x - 30, pos.y - 30, false);
+            pulledTissue.isDragging = true;
+        }
+    }
+
+    // Update pulled tissue position if exists
+    if (pulledTissue) {
+        pulledTissue.x = pos.x - 30;
+        pulledTissue.y = pos.y - 30;
+    }
+
     draggedObject.x = pos.x - dragOffsetX;
     draggedObject.y = pos.y - dragOffsetY;
 
-    // Magic 8 ball shake detection
+    // Magic 8 ball shake detection (time-based)
     if (draggedObject.type === 'magic8ball') {
         const dx = draggedObject.x - oldX;
         const dy = draggedObject.y - oldY;
         const speed = Math.sqrt(dx * dx + dy * dy);
-        draggedObject.shakeIntensity += speed * 0.5;
 
-        // Shake threshold reached - change weight!
-        if (draggedObject.shakeIntensity > 100 && performance.now() - draggedObject.lastShakeTime > 1000) {
-            const weights = ['weight1', 'weight5', 'weight10', 'mystery'];
-            const currentIndex = weights.indexOf(draggedObject.ball8State);
-            const newIndex = (currentIndex + 1) % weights.length;
-            draggedObject.ball8State = weights[newIndex];
-
-            // Update mass based on state
-            switch (draggedObject.ball8State) {
-                case 'weight1': draggedObject.mass = 1; break;
-                case 'weight5': draggedObject.mass = 5; break;
-                case 'weight10': draggedObject.mass = 10; break;
-                default: draggedObject.mass = 5; // Mystery defaults to 5
-            }
-
-            draggedObject.shakeIntensity = 0;
-            draggedObject.lastShakeTime = performance.now();
-        }
-
-        // Decay shake intensity over time
-        draggedObject.shakeIntensity *= 0.95;
+        // Consider it "shaking" if moving fast enough
+        draggedObject.isShaking = speed > 5;
     }
 
     draggedObject.vx = 0;
@@ -813,7 +847,21 @@ function onPointerMove(e) {
 function onPointerUp(e) {
     if (draggedObject) {
         draggedObject.isDragging = false;
+
+        // Reset tissue box state
+        if (draggedObject.type === 'tissuebox') {
+            draggedObject.tissueBeingPulled = false;
+        }
+
         draggedObject = null;
+    }
+
+    // Drop the pulled tissue
+    if (pulledTissue) {
+        pulledTissue.type = 'tissueDropped'; // Change to dropped version
+        pulledTissue.isDragging = false;
+        objects.push(pulledTissue);
+        pulledTissue = null;
     }
 }
 
@@ -999,6 +1047,12 @@ function updateScale(dt) {
     } else if (!levelComplete) {
         balanceTimer = 0;
         isBalanced = false;
+    }
+
+    // Update balanced text fade-in
+    if (levelComplete && balancedFadeAlpha < 1.0) {
+        balancedFadeAlpha += dt / balancedFadeDuration;
+        if (balancedFadeAlpha > 1.0) balancedFadeAlpha = 1.0;
     }
 }
 
@@ -1245,27 +1299,56 @@ function drawHUD() {
     let statusColor = '#6b6b6b';
 
     if (levelComplete) {
-        statusText = '✓ Balanced! Click to continue';
+        statusText = 'Click to continue';
         statusColor = '#5a8a8a';
     } else if (leftCount === 0 || rightCount === 0) {
         statusText = 'Place objects on both sides';
     } else if (usingDuplicates) {
         statusText = 'Use different objects on each side';
         statusColor = '#c97b63';
-    } else if (Math.abs(scale.angle) < balanceThreshold) {
-        statusText = `Balancing... ${Math.max(0, (balanceTimeRequired - balanceTimer)).toFixed(1)}s`;
-        statusColor = '#5a8a8a';
-    } else {
-        statusText = 'Balance the scale';
     }
+    // Removed: "Balance the scale" text and countdown
 
-    ctx.fillStyle = statusColor;
-    ctx.font = '18px Segoe UI, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(statusText, canvas.width / 2, 90);
+    if (statusText) {
+        ctx.fillStyle = statusColor;
+        ctx.font = '18px Segoe UI, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(statusText, canvas.width / 2, 90);
+    }
 
     // Restart button
     drawButton(buttons.restart, '#8b7d7d');
+}
+
+function drawBalancedText() {
+    if (balancedFadeAlpha <= 0) return;
+
+    // Use the balanced image if available, otherwise draw text
+    if (images.balanced) {
+        const imgWidth = canvas.width;
+        const imgHeight = images.balanced.height * (canvas.width / images.balanced.width);
+        const y = canvas.height / 2 - imgHeight / 2;
+
+        ctx.globalAlpha = balancedFadeAlpha;
+        ctx.drawImage(images.balanced, 0, y, imgWidth, imgHeight);
+        ctx.globalAlpha = 1.0;
+    } else {
+        // Fallback: draw text with gradient
+        const centerY = canvas.height / 2;
+        ctx.font = 'bold 120px Segoe UI, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Create gradient for bottom fade
+        const gradient = ctx.createLinearGradient(0, centerY - 60, 0, centerY + 60);
+        gradient.addColorStop(0, `rgba(160, 180, 190, ${balancedFadeAlpha})`); // Light bluish grey
+        gradient.addColorStop(0.5, `rgba(160, 180, 190, ${balancedFadeAlpha})`);
+        gradient.addColorStop(1, `rgba(160, 180, 190, 0)`); // Fade to transparent at bottom
+
+        ctx.fillStyle = gradient;
+        ctx.fillText('BALANCED', canvas.width / 2, centerY);
+        ctx.textBaseline = 'alphabetic';
+    }
 }
 
 function drawDevPanel() {
@@ -1344,10 +1427,15 @@ function drawDevPanel() {
 
 function drawGame() {
     drawGround();
+    drawBalancedText(); // Draw balanced text in background
     drawScale();
     drawDuplicationStation();
     for (const obj of objects) {
         obj.draw();
+    }
+    // Draw pulled tissue on top
+    if (pulledTissue) {
+        pulledTissue.draw();
     }
     drawHUD();
     drawDevPanel();
@@ -1397,6 +1485,33 @@ function animate() {
         // Update
         for (const obj of objects) {
             obj.update(dt);
+
+            // Magic 8 ball shake time tracking
+            if (obj.type === 'magic8ball' && obj.isShaking && obj.isDragging) {
+                obj.shakeTime += dt;
+
+                // After 2 seconds of shaking, change weight
+                if (obj.shakeTime >= 2.0 && performance.now() - obj.lastWeightChangeTime > 2000) {
+                    const weights = ['mystery', 'weight1', 'weight5', 'weight10'];
+                    const currentIndex = weights.indexOf(obj.ball8State);
+                    const newIndex = (currentIndex + 1) % weights.length;
+                    obj.ball8State = weights[newIndex];
+
+                    // Update mass based on state
+                    switch (obj.ball8State) {
+                        case 'weight1': obj.mass = 1; break;
+                        case 'weight5': obj.mass = 5; break;
+                        case 'weight10': obj.mass = 10; break;
+                        default: obj.mass = 5; // Mystery defaults to 5
+                    }
+
+                    obj.shakeTime = 0;
+                    obj.lastWeightChangeTime = performance.now();
+                }
+            } else if (obj.type === 'magic8ball' && !obj.isShaking) {
+                // Reset shake time if not shaking
+                obj.shakeTime = Math.max(0, obj.shakeTime - dt * 2); // Decay twice as fast
+            }
         }
         checkDuplicationPan();
         updateScale(dt);
