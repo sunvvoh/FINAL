@@ -539,14 +539,22 @@ class PhysicsObject {
             return;
         }
 
-        // Draw normal objects with shapes (fallback)
+        // Draw normal objects with shapes and grainy texture
         ctx.fillStyle = this.color;
         if (this.isCircle) {
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(255,255,255,0.3)';
-            ctx.lineWidth = this.isFixed ? 3 : 2;
+
+            // Apply grainy texture to circle
+            const boundingX = Math.floor(this.x - this.radius);
+            const boundingY = Math.floor(this.y - this.radius);
+            const boundingSize = Math.ceil(this.radius * 2);
+            applyLocalGrainTexture(boundingX, boundingY, boundingSize, boundingSize, 0.12);
+
+            // Subtle border
+            ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(0,0,0,0.2)';
+            ctx.lineWidth = this.isFixed ? 3 : 1.5;
             ctx.stroke();
 
             if (this.isFixed) {
@@ -558,8 +566,14 @@ class PhysicsObject {
             }
         } else {
             ctx.fillRect(this.x, this.y, this.width, this.height);
-            ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(255,255,255,0.3)';
-            ctx.lineWidth = this.isFixed ? 3 : 2;
+
+            // Apply grainy texture to rectangle
+            applyLocalGrainTexture(Math.floor(this.x), Math.floor(this.y),
+                                   Math.ceil(this.width), Math.ceil(this.height), 0.12);
+
+            // Subtle border
+            ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(0,0,0,0.2)';
+            ctx.lineWidth = this.isFixed ? 3 : 1.5;
             ctx.strokeRect(this.x, this.y, this.width, this.height);
 
             if (this.isFixed) {
@@ -592,11 +606,16 @@ function generateLevel(levelNum) {
 
     if (devMode) {
         // Dev mode: spawn all object types
+        const numNormal = 3;
         const numFeathers = 2;
         const numTissueBoxes = 2;
         const numMagic8Balls = 2;
         const numAnvils = 1;
 
+        for (let i = 0; i < numNormal; i++) {
+            const weight = Math.floor(Math.random() * 10) + 1;
+            movableObjects.push(createRandomObject(weight, false));
+        }
         for (let i = 0; i < numFeathers; i++) {
             movableObjects.push(createFeather());
         }
@@ -610,12 +629,15 @@ function generateLevel(levelNum) {
             movableObjects.push(createAnvil());
         }
     } else {
-        // Normal mode: progressive introduction
-        // Levels 1-3: Only feathers
-        // Levels 4-6: Feathers + tissue boxes
-        // Levels 7-9: Feathers + tissue boxes + magic 8 balls
-        // Levels 10+: All objects including anvil
+        // Normal mode: mix of normal and special objects
+        // Always include some normal objects for variety
+        const numNormal = 2 + Math.floor(levelNum / 3);
+        for (let i = 0; i < numNormal; i++) {
+            const weight = Math.floor(Math.random() * 10) + 1;
+            movableObjects.push(createRandomObject(weight, false));
+        }
 
+        // Progressive special object introduction
         const numFeathers = 1 + Math.floor(levelNum / 2);
         for (let i = 0; i < numFeathers; i++) {
             movableObjects.push(createFeather());
@@ -1517,6 +1539,21 @@ function applyGrainTexture(alpha = 0.03) {
     }
 
     ctx.putImageData(imageData, 0, 0);
+}
+
+// Apply grainy texture to a specific rectangular area
+function applyLocalGrainTexture(x, y, width, height, alpha = 0.15) {
+    const imageData = ctx.getImageData(x, y, width, height);
+    const pixels = imageData.data;
+
+    for (let i = 0; i < pixels.length; i += 4) {
+        const noise = (Math.random() - 0.5) * 255 * alpha;
+        pixels[i] += noise;     // R
+        pixels[i + 1] += noise; // G
+        pixels[i + 2] += noise; // B
+    }
+
+    ctx.putImageData(imageData, x, y);
 }
 
 // Animation loop
