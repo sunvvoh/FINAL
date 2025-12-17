@@ -18,6 +18,7 @@ const imageList = {
     ball8Weight10: 'images/8BALL WEIGHT 10.png',
     balanced: 'images/BALANCED.png',
     pan: 'images/PAN.png'
+    // anvil: 'images/ANVIL.png' // Uncomment when anvil image is added
 };
 
 function preloadImages(callback) {
@@ -152,6 +153,11 @@ const balanceTimeRequired = 1.0;
 let balancedFadeAlpha = 0;
 const balancedFadeDuration = 2.0;
 
+// Camera shake (for anvil impact)
+let cameraShakeX = 0;
+let cameraShakeY = 0;
+let cameraShakeDecay = 0;
+
 // Objects array
 let objects = [];
 let objectIdCounter = 0;
@@ -211,6 +217,11 @@ class PhysicsObject {
         // Pan positioning properties (for rotation)
         this.panOffsetX = 0; // Offset from pan center
         this.panOffsetY = 0;
+
+        // Anvil properties
+        this.anvilSlipSpeed = 0; // How fast it's slipping off cursor
+        this.anvilFalling = false; // Is it falling from slip
+        this.anvilImpactVelocity = 0; // Speed at impact for shake calculation
     }
 
     get radius() {
@@ -336,16 +347,16 @@ class PhysicsObject {
             return;
         }
 
-        // Apply gravity (reduced for feathers and tissues)
+        // Apply gravity (slightly reduced for feathers and tissues)
         if (this.type === 'feather' || this.type === 'tissue' || this.type === 'tissueDropped') {
-            this.vy += gravity * dt * 0.15; // Much slower fall
+            this.vy += gravity * dt * 0.4; // Moderate fall speed
             // Add sway motion
             this.swayPhase += this.swaySpeed * dt;
             const swayForce = Math.sin(this.swayPhase) * 30;
             this.vx += swayForce * dt;
             // Wind resistance
-            this.vx *= 0.85; // High air resistance
-            this.vy *= 0.92; // Floaty
+            this.vx *= 0.92; // Some air resistance
+            this.vy *= 0.96; // Slightly floaty
         } else {
             this.vy += gravity * dt;
             this.vx *= 0.99;
@@ -397,6 +408,22 @@ class PhysicsObject {
             } else {
                 this.y = groundY - this.height;
             }
+
+            // Anvil impact detection (commented out until anvil is added)
+            // if (this.type === 'anvil' && this.vy > 200) {
+            //     // Trigger camera shake based on fall speed
+            //     const shakeIntensity = Math.min(this.vy / 500, 1.0);
+            //     triggerCameraShake(shakeIntensity);
+            //
+            //     // Make other grounded objects bounce
+            //     for (const obj of objects) {
+            //         if (obj !== this && obj.grounded && obj.onPan === null) {
+            //             obj.vy = -200 * shakeIntensity; // Bounce up
+            //             obj.grounded = false;
+            //         }
+            //     }
+            // }
+
             if (this.vy > 50) {
                 this.vy = -this.vy * 0.3;
             } else {
@@ -470,10 +497,15 @@ class PhysicsObject {
         }
 
         if (this.type === 'tissuebox') {
-            let tissueImg = images.tissueBoxFull;
-            if (this.tissueBeingPulled && images.tissueBoxGrabbed) {
-                tissueImg = images.tissueBoxGrabbed;
-            } else if (this.tissuesRemaining === 0 && images.tissueBoxEmpty) {
+            let tissueImg;
+            if (this.tissueBeingPulled) {
+                // Show empty state while pulling tissue
+                tissueImg = images.tissueBoxEmpty;
+            } else if (this.tissuesRemaining > 0) {
+                // Show full state if tissues remain
+                tissueImg = images.tissueBoxFull;
+            } else {
+                // Show empty state if no tissues left
                 tissueImg = images.tissueBoxEmpty;
             }
             if (tissueImg) {
@@ -483,6 +515,12 @@ class PhysicsObject {
         }
 
         if (this.type === 'magic8ball') {
+            // Draw glow effect if active
+            if (this.glowAlpha > 0) {
+                ctx.shadowBlur = 40 * this.glowAlpha;
+                ctx.shadowColor = this.glowColor;
+            }
+
             let ballImg;
             switch (this.ball8State) {
                 case 'weight1': ballImg = images.ball8Weight1; break;
@@ -492,8 +530,29 @@ class PhysicsObject {
             }
             if (ballImg) {
                 ctx.drawImage(ballImg, this.x, this.y, this.width, this.height);
-                return;
             }
+
+            // Reset shadow
+            if (this.glowAlpha > 0) {
+                ctx.shadowBlur = 0;
+            }
+            return;
+        }
+
+        if (this.type === 'anvil') {
+            // Uncomment when anvil image is added
+            // if (images.anvil) {
+            //     ctx.drawImage(images.anvil, this.x, this.y, this.width, this.height);
+            //     return;
+            // }
+
+            // Fallback rendering
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(this.x, this.y, this.width, this.height);
+            return;
         }
 
         // Draw normal objects with shapes (fallback)
@@ -544,32 +603,62 @@ function generateLevel(levelNum) {
     dupScreen.input = '';
     dupScreen.objectOnPan = null;
 
-    // Only use special objects - feather, tissue box, magic 8 ball
+    // Progressive object introduction based on level
     let movableObjects = [];
 
-    // Add multiple copies of each special object based on level
-    const numFeathers = 1 + Math.floor(levelNum / 3);
-    const numTissueBoxes = 1 + Math.floor(levelNum / 5);
-    const numMagic8Balls = 1 + Math.floor(levelNum / 7);
+    if (devMode) {
+        // Dev mode: spawn all object types
+        const numFeathers = 2;
+        const numTissueBoxes = 2;
+        const numMagic8Balls = 2;
 
-    for (let i = 0; i < numFeathers; i++) {
-        movableObjects.push(createFeather());
-    }
-    for (let i = 0; i < numTissueBoxes; i++) {
-        movableObjects.push(createTissueBox());
-    }
-    for (let i = 0; i < numMagic8Balls; i++) {
-        movableObjects.push(createMagic8Ball());
+        for (let i = 0; i < numFeathers; i++) {
+            movableObjects.push(createFeather());
+        }
+        for (let i = 0; i < numTissueBoxes; i++) {
+            movableObjects.push(createTissueBox());
+        }
+        for (let i = 0; i < numMagic8Balls; i++) {
+            movableObjects.push(createMagic8Ball());
+        }
+    } else {
+        // Normal mode: progressive introduction
+        // Levels 1-3: Only feathers
+        // Levels 4+: Feathers + tissue boxes
+        // Levels 7+: Feathers + tissue boxes + magic 8 balls
+
+        const numFeathers = 1 + Math.floor(levelNum / 2);
+        for (let i = 0; i < numFeathers; i++) {
+            movableObjects.push(createFeather());
+        }
+
+        if (levelNum >= 4) {
+            const numTissueBoxes = 1 + Math.floor((levelNum - 3) / 3);
+            for (let i = 0; i < numTissueBoxes; i++) {
+                movableObjects.push(createTissueBox());
+            }
+        }
+
+        if (levelNum >= 7) {
+            const numMagic8Balls = 1 + Math.floor((levelNum - 6) / 4);
+            for (let i = 0; i < numMagic8Balls; i++) {
+                movableObjects.push(createMagic8Ball());
+            }
+        }
     }
 
-    // Position movable objects on the ground
-    const groundSpacing = canvas.width / (movableObjects.length + 1);
-    movableObjects.forEach((obj, i) => {
+    // Randomize spawn locations spread across the ground
+    const margin = 200; // Keep away from edges
+    const spawnWidth = canvas.width - margin * 2;
+    movableObjects.forEach((obj) => {
+        // Random X position with margin
+        const randomX = margin + Math.random() * spawnWidth;
+
         if (obj.isCircle) {
-            obj.x = groundSpacing * (i + 1);
+            obj.x = randomX;
             obj.y = groundY - obj.radius;
         } else {
-            obj.x = groundSpacing * (i + 1) - obj.width/2;
+            obj.x = randomX - obj.width/2;
             obj.y = groundY - obj.height;
         }
         obj.grounded = true;
@@ -587,30 +676,43 @@ function createRandomObject(weight, isFixed) {
 
 // Create special objects
 function createFeather() {
-    const size = 80;
-    return new PhysicsObject(0, 0, size, size, 0.1, '#f5f5f5', false, false, 'feather');
+    const size = 120; // 80 * 1.5
+    return new PhysicsObject(0, 0, size, size, 1, '#f5f5f5', false, false, 'feather');
 }
 
 function createTissueBox() {
-    const width = 100;
-    const height = 80;
-    const weight = 3; // Base weight with tissues
-    return new PhysicsObject(0, 0, width, height, weight, '#d8c3a5', false, false, 'tissuebox');
+    const width = 150; // 100 * 1.5
+    const height = 120; // 80 * 1.5
+    const weight = 6; // Base weight with 5 tissues
+    const box = new PhysicsObject(0, 0, width, height, weight, '#d8c3a5', false, false, 'tissuebox');
+    box.tissuesRemaining = 5;
+    return box;
 }
 
 function createMagic8Ball() {
-    const size = 90;
+    const size = 135; // 90 * 1.5
     const ball = new PhysicsObject(0, 0, size, size, 0, '#2d2d2d', true, false, 'magic8ball');
     ball.ball8State = 'mystery';
     ball.mass = 0; // Mystery has no weight
+    ball.glowAlpha = 0; // For glow effect
+    ball.glowColor = '#FFCF57';
     return ball;
 }
 
 function createTissue(x, y, dropped = false) {
-    const width = 60;
-    const height = 60;
-    const tissue = new PhysicsObject(x, y, width, height, 0.05, '#f5f5f5', false, false, dropped ? 'tissueDropped' : 'tissue');
+    const width = 90; // 60 * 1.5
+    const height = 90; // 60 * 1.5
+    const tissue = new PhysicsObject(x, y, width, height, 1, '#f5f5f5', false, false, dropped ? 'tissueDropped' : 'tissue');
     return tissue;
+}
+
+function createAnvil() {
+    const width = 120; // Will scale to 1.5x when image is added
+    const height = 120;
+    const weight = 50; // Very heavy!
+    const anvil = new PhysicsObject(0, 0, width, height, weight, '#3a3a3a', false, false, 'anvil');
+    anvil.anvilSlipSpeed = 150; // Pixels per second it slips down
+    return anvil;
 }
 
 // Restart function
@@ -716,18 +818,21 @@ function onPointerDown(e) {
                 draggedObject.grounded = false;
                 draggedObject.onPan = null;
 
-                // Tissue box: start timer for grab detection
+                // Tissue box: start tissue pull mode
                 if (draggedObject.type === 'tissuebox' && draggedObject.tissuesRemaining > 0) {
-                    draggedObject.tissueGrabStartTime = performance.now();
-                    draggedObject.tissuePulled = false;
-                }
-
-                if (draggedObject.isCircle) {
-                    dragOffsetX = pos.x - draggedObject.x;
-                    dragOffsetY = pos.y - draggedObject.y;
+                    draggedObject.tissueBeingPulled = true; // Show empty state immediately
+                    draggedObject.isDragging = false; // Tissue box cannot be dragged
+                    dragOffsetX = 0;
+                    dragOffsetY = 0;
                 } else {
-                    dragOffsetX = pos.x - draggedObject.x;
-                    dragOffsetY = pos.y - draggedObject.y;
+                    // Normal dragging for other objects
+                    if (draggedObject.isCircle) {
+                        dragOffsetX = pos.x - draggedObject.x;
+                        dragOffsetY = pos.y - draggedObject.y;
+                    } else {
+                        dragOffsetX = pos.x - draggedObject.x;
+                        dragOffsetY = pos.y - draggedObject.y;
+                    }
                 }
                 dupScreen.active = false;
                 return;
@@ -744,56 +849,56 @@ function onPointerMove(e) {
     const oldX = draggedObject.x;
     const oldY = draggedObject.y;
 
-    // Tissue box pull detection
-    if (draggedObject.type === 'tissuebox' && !draggedObject.tissuePulled) {
-        const holdTime = performance.now() - draggedObject.tissueGrabStartTime;
-        const moved = Math.abs(draggedObject.x - (pos.x - dragOffsetX)) > 5 ||
-                     Math.abs(draggedObject.y - (pos.y - dragOffsetY)) > 5;
+    // Tissue box: spawn tissue on first drag movement
+    if (draggedObject.type === 'tissuebox' && draggedObject.tissueBeingPulled && !pulledTissue) {
+        // Spawn tissue at cursor
+        pulledTissue = createTissue(pos.x - 45, pos.y - 45, false);
+        pulledTissue.isDragging = true;
 
-        if (holdTime > 200 && !moved) {
-            // Show grabbed state
-            draggedObject.tissueBeingPulled = true;
-        } else if (holdTime > 200 && moved && draggedObject.tissueBeingPulled) {
-            // Pull tissue out!
-            draggedObject.tissuePulled = true;
-            draggedObject.tissuesRemaining--;
-            draggedObject.mass = Math.max(0.5, 3 - (5 - draggedObject.tissuesRemaining) * 0.5);
-            draggedObject.tissueBeingPulled = false;
-
-            // Create floating tissue at cursor
-            pulledTissue = createTissue(pos.x - 30, pos.y - 30, false);
-            pulledTissue.isDragging = true;
-        }
+        // Update tissue box weight
+        draggedObject.tissuesRemaining--;
+        draggedObject.mass = Math.max(1, 6 - (5 - draggedObject.tissuesRemaining)); // 6kg -> 1kg
     }
 
     // Update pulled tissue position if exists
     if (pulledTissue) {
-        pulledTissue.x = pos.x - 30;
-        pulledTissue.y = pos.y - 30;
+        pulledTissue.x = pos.x - 45;
+        pulledTissue.y = pos.y - 45;
+    } else if (draggedObject.isDragging) {
+        // Normal object dragging (not tissue box in pull mode)
+        draggedObject.x = pos.x - dragOffsetX;
+        draggedObject.y = pos.y - dragOffsetY;
+
+        // Anvil: slowly slips down off cursor (not implemented until image is added)
+        // if (draggedObject.type === 'anvil') {
+        //     dragOffsetY -= draggedObject.anvilSlipSpeed * 0.016; // Slip down
+        //     if (dragOffsetY < -draggedObject.height) {
+        //         // Anvil has slipped off completely
+        //         draggedObject.isDragging = false;
+        //         draggedObject.anvilFalling = true;
+        //     }
+        // }
+
+        // Magic 8 ball shake detection (time-based)
+        if (draggedObject.type === 'magic8ball') {
+            const dx = draggedObject.x - oldX;
+            const dy = draggedObject.y - oldY;
+            const speed = Math.sqrt(dx * dx + dy * dy);
+
+            // Consider it "shaking" if moving fast enough
+            draggedObject.isShaking = speed > 5;
+        }
+
+        draggedObject.vx = 0;
+        draggedObject.vy = 0;
     }
-
-    draggedObject.x = pos.x - dragOffsetX;
-    draggedObject.y = pos.y - dragOffsetY;
-
-    // Magic 8 ball shake detection (time-based)
-    if (draggedObject.type === 'magic8ball') {
-        const dx = draggedObject.x - oldX;
-        const dy = draggedObject.y - oldY;
-        const speed = Math.sqrt(dx * dx + dy * dy);
-
-        // Consider it "shaking" if moving fast enough
-        draggedObject.isShaking = speed > 5;
-    }
-
-    draggedObject.vx = 0;
-    draggedObject.vy = 0;
 }
 
 function onPointerUp(e) {
     if (draggedObject) {
         draggedObject.isDragging = false;
 
-        // Reset tissue box state
+        // Reset tissue box state - return to "with tissue" if tissues remain
         if (draggedObject.type === 'tissuebox') {
             draggedObject.tissueBeingPulled = false;
         }
@@ -1075,15 +1180,7 @@ function drawScale() {
     ctx.arc(baseX, pillarTop - 25, 37.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Beam
-    ctx.save();
-    ctx.translate(baseX, pillarTop + 25);
-    ctx.rotate(-scale.angle);
-    ctx.fillStyle = metalColor;
-    ctx.fillRect(-scale.armLength - 50, -20, scale.armLength * 2 + 100, 40);
-    ctx.restore();
-
-    // Get pan positions
+    // Get pan positions (needed for chains)
     const leftX = getLeftPanX();
     const leftY = getLeftPanY();
     const rightX = getRightPanX();
@@ -1096,7 +1193,7 @@ function drawScale() {
     const rightBeamX = baseX + Math.cos(-scale.angle) * scale.armLength - Math.sin(-scale.angle) * 0;
     const rightBeamY = beamY + Math.sin(-scale.angle) * scale.armLength + Math.cos(-scale.angle) * 0;
 
-    // Draw chains (1 chain per pan - hanging from beam end to pan center)
+    // Draw chains BEHIND beam (1 chain per pan - hanging from beam end to pan center)
     ctx.strokeStyle = '#4a4a4a';      // Dark gray chains
     ctx.lineWidth = 4;
 
@@ -1111,6 +1208,14 @@ function drawScale() {
     ctx.moveTo(rightBeamX, rightBeamY);
     ctx.lineTo(rightX, rightY - panHeight/2);
     ctx.stroke();
+
+    // Beam (drawn OVER chains)
+    ctx.save();
+    ctx.translate(baseX, pillarTop + 25);
+    ctx.rotate(-scale.angle);
+    ctx.fillStyle = metalColor;
+    ctx.fillRect(-scale.armLength - 50, -20, scale.armLength * 2 + 100, 40);
+    ctx.restore();
 
     // Left pan
     if (images.pan) {
@@ -1373,6 +1478,12 @@ function drawDevPanel() {
 }
 
 function drawGame() {
+    // Apply camera shake if active
+    if (cameraShakeDecay > 0) {
+        ctx.save();
+        ctx.translate(cameraShakeX, cameraShakeY);
+    }
+
     drawGround();
     drawBalancedText(); // Draw balanced text in background
     drawScale();
@@ -1386,6 +1497,17 @@ function drawGame() {
     }
     drawHUD();
     drawDevPanel();
+
+    // Restore camera transform
+    if (cameraShakeDecay > 0) {
+        ctx.restore();
+    }
+}
+
+function triggerCameraShake(intensity) {
+    cameraShakeDecay = intensity;
+    cameraShakeX = (Math.random() - 0.5) * intensity * 20;
+    cameraShakeY = (Math.random() - 0.5) * intensity * 20;
 }
 
 // Handle level complete click
@@ -1457,12 +1579,32 @@ function animate() {
 
                     obj.shakeTime = 0;
                     obj.lastWeightChangeTime = performance.now();
+                    obj.glowAlpha = 1.0; // Trigger glow effect
                 }
             } else if (obj.type === 'magic8ball' && !obj.isShaking) {
                 // Reset shake time if not shaking
                 obj.shakeTime = Math.max(0, obj.shakeTime - dt * 2); // Decay twice as fast
             }
+
+            // Decay glow effect for magic 8 ball
+            if (obj.type === 'magic8ball' && obj.glowAlpha > 0) {
+                obj.glowAlpha = Math.max(0, obj.glowAlpha - dt * 2); // Fade over 0.5 seconds
+            }
         }
+
+        // Update camera shake
+        if (cameraShakeDecay > 0) {
+            cameraShakeDecay = Math.max(0, cameraShakeDecay - dt * 5); // Decay over time
+            if (cameraShakeDecay > 0) {
+                // Add random jitter
+                cameraShakeX = (Math.random() - 0.5) * cameraShakeDecay * 20;
+                cameraShakeY = (Math.random() - 0.5) * cameraShakeDecay * 20;
+            } else {
+                cameraShakeX = 0;
+                cameraShakeY = 0;
+            }
+        }
+
         checkDuplicationPan();
         updateScale(dt);
         drawGame();
