@@ -92,21 +92,6 @@ function updateDupScreenPosition() {
 updateDupScreenPosition();
 window.addEventListener('resize', updateDupScreenPosition);
 
-// Trashcan
-const trashcan = {
-    x: 0,
-    y: 0,
-    width: 80,
-    height: 100
-};
-
-function updateTrashcanPosition() {
-    trashcan.x = canvas.width - 100;
-    trashcan.y = groundY - trashcan.height;
-}
-updateTrashcanPosition();
-window.addEventListener('resize', updateTrashcanPosition);
-
 // Balance detection
 let balanceTimer = 0;
 let isBalanced = false;
@@ -558,11 +543,6 @@ function getEventPos(e) {
     return { x: e.clientX, y: e.clientY };
 }
 
-function isInTrashcan(x, y) {
-    return x >= trashcan.x && x <= trashcan.x + trashcan.width &&
-           y >= trashcan.y && y <= trashcan.y + trashcan.height;
-}
-
 function onPointerDown(e) {
     const pos = getEventPos(e);
 
@@ -640,14 +620,7 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
     if (draggedObject) {
-        const objCenterX = draggedObject.centerX;
-        const objCenterY = draggedObject.centerY;
-        
-        if (isInTrashcan(objCenterX, objCenterY)) {
-            objects = objects.filter(obj => obj.id !== draggedObject.id);
-        } else {
-            draggedObject.isDragging = false;
-        }
+        draggedObject.isDragging = false;
         draggedObject = null;
     }
 }
@@ -919,15 +892,52 @@ function drawScale() {
     ctx.fillRect(-scale.armLength - 50, -20, scale.armLength * 2 + 100, 40);
     ctx.restore();
 
-    // Left pan
+    // Get pan positions
     const leftX = getLeftPanX();
     const leftY = getLeftPanY();
+    const rightX = getRightPanX();
+    const rightY = getRightPanY();
+
+    // Calculate beam end positions (where chains attach)
+    const beamY = pillarTop + 25;
+    const leftBeamX = baseX + Math.cos(-scale.angle) * (-scale.armLength) - Math.sin(-scale.angle) * 0;
+    const leftBeamY = beamY + Math.sin(-scale.angle) * (-scale.armLength) + Math.cos(-scale.angle) * 0;
+    const rightBeamX = baseX + Math.cos(-scale.angle) * scale.armLength - Math.sin(-scale.angle) * 0;
+    const rightBeamY = beamY + Math.sin(-scale.angle) * scale.armLength + Math.cos(-scale.angle) * 0;
+
+    // Draw chains (4 chains per pan - 2 on each side)
+    ctx.strokeStyle = '#8b8b8b';
+    ctx.lineWidth = 3;
+
+    // Left pan chains
+    const leftChainOffset = panWidth * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(leftBeamX - leftChainOffset, leftBeamY);
+    ctx.lineTo(leftX - leftChainOffset, leftY - panHeight/2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(leftBeamX + leftChainOffset, leftBeamY);
+    ctx.lineTo(leftX + leftChainOffset, leftY - panHeight/2);
+    ctx.stroke();
+
+    // Right pan chains
+    const rightChainOffset = panWidth * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(rightBeamX - rightChainOffset, rightBeamY);
+    ctx.lineTo(rightX - rightChainOffset, rightY - panHeight/2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(rightBeamX + rightChainOffset, rightBeamY);
+    ctx.lineTo(rightX + rightChainOffset, rightY - panHeight/2);
+    ctx.stroke();
+
+    // Left pan
     ctx.fillStyle = panColor;
     ctx.fillRect(leftX - panWidth/2, leftY - panHeight/2, panWidth, panHeight);
 
     // Right pan
-    const rightX = getRightPanX();
-    const rightY = getRightPanY();
     ctx.fillRect(rightX - panWidth/2, rightY - panHeight/2, panWidth, panHeight);
 }
 
@@ -986,39 +996,6 @@ function drawDuplicationStation() {
     ctx.textAlign = 'center';
     ctx.font = '8px monospace';
     ctx.fillText('Enter: Spawn (1-10)', dupScreen.x, dupScreen.y + dupScreen.height/2 - 5);
-}
-
-function drawTrashcan() {
-    const x = trashcan.x;
-    const y = trashcan.y;
-    const w = trashcan.width;
-    const h = trashcan.height;
-
-    ctx.fillStyle = '#444455';
-    ctx.beginPath();
-    ctx.moveTo(x + 5, y + 20);
-    ctx.lineTo(x + 10, y + h);
-    ctx.lineTo(x + w - 10, y + h);
-    ctx.lineTo(x + w - 5, y + 20);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.strokeStyle = '#333344';
-    ctx.lineWidth = 2;
-    for (let i = 1; i < 4; i++) {
-        const lx = x + 10 + (i * (w - 20) / 4);
-        ctx.beginPath();
-        ctx.moveTo(lx, y + 25);
-        ctx.lineTo(lx + 3, y + h - 5);
-        ctx.stroke();
-    }
-
-    ctx.fillStyle = '#555566';
-    ctx.fillRect(x, y + 10, w, 12);
-    
-    ctx.fillRect(x + w/2 - 15, y, 30, 12);
-    ctx.fillStyle = '#666677';
-    ctx.fillRect(x + w/2 - 10, y + 2, 20, 8);
 }
 
 function drawGround() {
@@ -1174,7 +1151,6 @@ function drawGame() {
     drawGround();
     drawScale();
     drawDuplicationStation();
-    drawTrashcan();
     for (const obj of objects) {
         obj.draw();
     }
