@@ -23,8 +23,8 @@ let groundY;
 const scale = {
     x: 0,
     baseY: 0,
-    pillarHeight: 250,
-    armLength: 150,
+    pillarHeight: 625,
+    armLength: 375,
     angle: 0,
     targetAngle: 0,
     angleVelocity: 0,
@@ -32,8 +32,8 @@ const scale = {
 };
 
 // Pan properties
-const panWidth = 120;
-const panHeight = 15;
+const panWidth = 300;
+const panHeight = 38;
 
 function updateScalePosition() {
     groundY = canvas.height - 50;
@@ -44,11 +44,11 @@ updateScalePosition();
 window.addEventListener('resize', updateScalePosition);
 
 function getLeftPanY() {
-    return scale.baseY - scale.pillarHeight + 20 + Math.sin(scale.angle) * scale.armLength;
+    return scale.baseY - scale.pillarHeight + 50 + Math.sin(scale.angle) * scale.armLength;
 }
 
 function getRightPanY() {
-    return scale.baseY - scale.pillarHeight + 20 - Math.sin(scale.angle) * scale.armLength;
+    return scale.baseY - scale.pillarHeight + 50 - Math.sin(scale.angle) * scale.armLength;
 }
 
 function getLeftPanX() {
@@ -457,7 +457,7 @@ function generateLevel(levelNum) {
     // Position fixed objects on pans
     let leftPanX = getLeftPanX();
     let rightPanX = getRightPanX();
-    let leftPanY = scale.baseY - scale.pillarHeight + 20 - panHeight/2;
+    let leftPanY = scale.baseY - scale.pillarHeight + 50 - panHeight/2;
     let rightPanY = leftPanY;
 
     leftObjects.forEach((obj, i) => {
@@ -895,28 +895,28 @@ function drawScale() {
     // Base
     ctx.fillStyle = baseColor;
     ctx.beginPath();
-    ctx.moveTo(baseX - 60, baseY);
-    ctx.lineTo(baseX + 60, baseY);
-    ctx.lineTo(baseX + 50, baseY - 20);
-    ctx.lineTo(baseX - 50, baseY - 20);
+    ctx.moveTo(baseX - 150, baseY);
+    ctx.lineTo(baseX + 150, baseY);
+    ctx.lineTo(baseX + 125, baseY - 50);
+    ctx.lineTo(baseX - 125, baseY - 50);
     ctx.closePath();
     ctx.fill();
 
     // Pillar
     ctx.fillStyle = metalColor;
-    ctx.fillRect(baseX - 10, pillarTop, 20, scale.pillarHeight - 20);
+    ctx.fillRect(baseX - 25, pillarTop, 50, scale.pillarHeight - 50);
 
     // Top ornament
     ctx.beginPath();
-    ctx.arc(baseX, pillarTop - 10, 15, 0, Math.PI * 2);
+    ctx.arc(baseX, pillarTop - 25, 37.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Beam
     ctx.save();
-    ctx.translate(baseX, pillarTop + 10);
+    ctx.translate(baseX, pillarTop + 25);
     ctx.rotate(-scale.angle);
     ctx.fillStyle = metalColor;
-    ctx.fillRect(-scale.armLength - 20, -8, scale.armLength * 2 + 40, 16);
+    ctx.fillRect(-scale.armLength - 50, -20, scale.armLength * 2 + 100, 40);
     ctx.restore();
 
     // Left pan
