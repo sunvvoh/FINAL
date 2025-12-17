@@ -207,6 +207,10 @@ class PhysicsObject {
         this.shakeTime = 0; // Time spent shaking
         this.isShaking = false;
         this.lastWeightChangeTime = 0;
+
+        // Pan positioning properties (for rotation)
+        this.panOffsetX = 0; // Offset from pan center
+        this.panOffsetY = 0;
     }
 
     get radius() {
@@ -281,14 +285,46 @@ class PhysicsObject {
         const objectBottom = this.bottom;
 
         if (this.grounded && this.onPan && panInfo.whichPan === this.onPan) {
-            if (this.isCircle) {
-                this.y = panInfo.panTop - this.radius;
+            // Get current pan position
+            let panX, panY;
+            if (this.onPan === 'left') {
+                panX = getLeftPanX();
+                panY = getLeftPanY();
+            } else if (this.onPan === 'right') {
+                panX = getRightPanX();
+                panY = getRightPanY();
             } else {
-                this.y = panInfo.panTop - this.height;
+                panX = dupStation.x;
+                panY = dupStation.y - dupStation.panHeight / 2;
             }
+
+            // Update position based on pan center + stored offset
+            // For left/right pans, also apply rotation to the offset
+            if (this.onPan === 'left' || this.onPan === 'right') {
+                // Apply rotation transformation to the offset
+                const rotatedOffsetX = Math.cos(-scale.angle) * this.panOffsetX - Math.sin(-scale.angle) * this.panOffsetY;
+                const rotatedOffsetY = Math.sin(-scale.angle) * this.panOffsetX + Math.cos(-scale.angle) * this.panOffsetY;
+
+                if (this.isCircle) {
+                    this.x = panX + rotatedOffsetX;
+                    this.y = panY - panHeight/2 - this.radius + rotatedOffsetY;
+                } else {
+                    this.x = panX + rotatedOffsetX - this.width/2;
+                    this.y = panY - panHeight/2 - this.height + rotatedOffsetY;
+                }
+            } else {
+                // Duplication pan doesn't rotate
+                if (this.isCircle) {
+                    this.x = panX + this.panOffsetX;
+                    this.y = panInfo.panTop - this.radius;
+                } else {
+                    this.x = panX + this.panOffsetX - this.width/2;
+                    this.y = panInfo.panTop - this.height;
+                }
+            }
+
             this.vy = 0;
             this.vx *= 0.9;
-            this.x += this.vx * dt;
 
             const newPanInfo = this.getPanInfo();
             if (!newPanInfo.overPan || newPanInfo.whichPan !== this.onPan) {
@@ -330,6 +366,25 @@ class PhysicsObject {
                 this.vy = 0;
                 this.grounded = true;
                 this.onPan = panInfo.whichPan;
+
+                // Calculate and store offset from pan center
+                let panX;
+                if (panInfo.whichPan === 'left') {
+                    panX = getLeftPanX();
+                } else if (panInfo.whichPan === 'right') {
+                    panX = getRightPanX();
+                } else {
+                    panX = dupStation.x;
+                }
+
+                // Store the offset from pan center
+                if (this.isCircle) {
+                    this.panOffsetX = this.x - panX;
+                } else {
+                    this.panOffsetX = (this.x + this.width/2) - panX;
+                }
+                this.panOffsetY = 0; // Objects sit on top, no Y offset needed
+
                 return;
             }
         }
@@ -489,136 +544,23 @@ function generateLevel(levelNum) {
     dupScreen.input = '';
     dupScreen.objectOnPan = null;
 
-    // Difficulty scaling
-    const difficulty = Math.min(levelNum, 20);
-    const useFixedObjects = levelNum >= 5;
-
-    // Track used weights to avoid duplicates
-    let usedWeights = new Set();
-
-    // Generate unique weight that hasn't been used
-    function getUniqueWeight(min, max) {
-        let attempts = 0;
-        let weight;
-        do {
-            weight = Math.floor(Math.random() * (max - min + 1)) + min;
-            attempts++;
-            if (attempts > 50) {
-                for (let w = min; w <= max; w++) {
-                    if (!usedWeights.has(w)) {
-                        weight = w;
-                        break;
-                    }
-                }
-                break;
-            }
-        } while (usedWeights.has(weight));
-        usedWeights.add(weight);
-        return weight;
-    }
-
-    // Generate objects with unique weights that can balance
-    let leftObjects = [];
-    let rightObjects = [];
+    // Only use special objects - feather, tissue box, magic 8 ball
     let movableObjects = [];
 
-    // Weight range increases with difficulty (1-15 at higher levels)
-    const minWeight = 1;
-    const maxWeight = Math.min(5 + difficulty, 15);
+    // Add multiple copies of each special object based on level
+    const numFeathers = 1 + Math.floor(levelNum / 3);
+    const numTissueBoxes = 1 + Math.floor(levelNum / 5);
+    const numMagic8Balls = 1 + Math.floor(levelNum / 7);
 
-    // Movable object count: 3-5, more in later levels
-    const numMovable = Math.min(3 + Math.floor(difficulty / 5), 5);
-
-    if (useFixedObjects && Math.random() > 0.5) {
-        // Fixed object puzzle
-        const fixedWeight = getUniqueWeight(minWeight + 2, maxWeight);
-        const fixedSide = Math.random() > 0.5 ? 'left' : 'right';
-        
-        const fixedObj = createRandomObject(fixedWeight, true);
-        
-        // Create movable objects - some that can sum to fixedWeight, plus extras
-        let weights = [];
-        let remaining = fixedWeight;
-        
-        // Create 2 objects that sum to fixedWeight
-        const w1 = getUniqueWeight(1, Math.floor(remaining * 0.7));
-        weights.push(w1);
-        remaining -= w1;
-        weights.push(remaining);
-        usedWeights.add(remaining);
-        
-        // Add extra movable objects to reach numMovable
-        for (let i = weights.length; i < numMovable; i++) {
-            weights.push(getUniqueWeight(minWeight, maxWeight));
-        }
-        
-        weights.forEach(w => {
-            movableObjects.push(createRandomObject(w, false));
-        });
-
-        if (fixedSide === 'left') {
-            leftObjects.push(fixedObj);
-        } else {
-            rightObjects.push(fixedObj);
-        }
-    } else {
-        // No fixed objects - create objects that can balance
-        let weights = [];
-        
-        for (let i = 0; i < numMovable; i++) {
-            weights.push(getUniqueWeight(minWeight, maxWeight));
-        }
-        
-        // Sort to help find valid combinations
-        weights.sort((a, b) => b - a);
-        
-        weights.forEach(w => {
-            movableObjects.push(createRandomObject(w, false));
-        });
-    }
-
-    // Add special objects based on level
-    if (levelNum >= 3) {
+    for (let i = 0; i < numFeathers; i++) {
         movableObjects.push(createFeather());
     }
-    if (levelNum >= 5) {
+    for (let i = 0; i < numTissueBoxes; i++) {
         movableObjects.push(createTissueBox());
     }
-    if (levelNum >= 7) {
+    for (let i = 0; i < numMagic8Balls; i++) {
         movableObjects.push(createMagic8Ball());
     }
-
-    // Position fixed objects on pans
-    let leftPanX = getLeftPanX();
-    let rightPanX = getRightPanX();
-    let leftPanY = scale.baseY - scale.pillarHeight + 50 - panHeight/2;
-    let rightPanY = leftPanY;
-
-    leftObjects.forEach((obj, i) => {
-        if (obj.isCircle) {
-            obj.x = leftPanX + (i - leftObjects.length/2) * 30;
-            obj.y = leftPanY - obj.radius;
-        } else {
-            obj.x = leftPanX - obj.width/2 + (i - leftObjects.length/2) * 30;
-            obj.y = leftPanY - obj.height;
-        }
-        obj.grounded = true;
-        obj.onPan = 'left';
-        objects.push(obj);
-    });
-
-    rightObjects.forEach((obj, i) => {
-        if (obj.isCircle) {
-            obj.x = rightPanX + (i - rightObjects.length/2) * 30;
-            obj.y = rightPanY - obj.radius;
-        } else {
-            obj.x = rightPanX - obj.width/2 + (i - rightObjects.length/2) * 30;
-            obj.y = rightPanY - obj.height;
-        }
-        obj.grounded = true;
-        obj.onPan = 'right';
-        objects.push(obj);
-    });
 
     // Position movable objects on the ground
     const groundSpacing = canvas.width / (movableObjects.length + 1);
@@ -658,7 +600,10 @@ function createTissueBox() {
 
 function createMagic8Ball() {
     const size = 90;
-    return new PhysicsObject(0, 0, size, size, 5, '#2d2d2d', true, false, 'magic8ball');
+    const ball = new PhysicsObject(0, 0, size, size, 0, '#2d2d2d', true, false, 'magic8ball');
+    ball.ball8State = 'mystery';
+    ball.mass = 0; // Mystery has no weight
+    return ball;
 }
 
 function createTissue(x, y, dropped = false) {
@@ -1062,11 +1007,11 @@ function drawStartScreen() {
 
     // Title
     ctx.fillStyle = '#2d2d2d';
-    ctx.font = 'bold 48px Segoe UI, sans-serif';
+    ctx.font = 'bold 48px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Balance Scale', canvas.width / 2, canvas.height / 2 - 100);
 
-    ctx.font = '24px Segoe UI, sans-serif';
+    ctx.font = '24px Poppins, sans-serif';
     ctx.fillStyle = '#6b6b6b';
     ctx.fillText('A Physics Puzzle Game', canvas.width / 2, canvas.height / 2 - 50);
 
@@ -1081,7 +1026,7 @@ function drawButton(btn, color, disabled = false) {
     ctx.fill();
 
     ctx.fillStyle = disabled ? '#6b6b6b' : '#f5f5f5';
-    ctx.font = '18px Segoe UI, sans-serif';
+    ctx.font = '18px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(btn.text, btn.x + btn.width / 2, btn.y + btn.height / 2 + 6);
 }
@@ -1093,7 +1038,7 @@ function drawPauseScreen() {
 
     // Pause text
     ctx.fillStyle = '#f5f5f5';
-    ctx.font = 'bold 36px Segoe UI, sans-serif';
+    ctx.font = 'bold 36px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2 - 100);
 
@@ -1151,39 +1096,39 @@ function drawScale() {
     const rightBeamX = baseX + Math.cos(-scale.angle) * scale.armLength - Math.sin(-scale.angle) * 0;
     const rightBeamY = beamY + Math.sin(-scale.angle) * scale.armLength + Math.cos(-scale.angle) * 0;
 
-    // Draw chains (2 chains per pan - hanging from beam end to pan center)
+    // Draw chains (1 chain per pan - hanging from beam end to pan center)
     ctx.strokeStyle = '#4a4a4a';      // Dark gray chains
     ctx.lineWidth = 4;
 
-    // Left pan chains - two parallel chains to center
-    const chainSpacing = 30;
+    // Left pan chain
     ctx.beginPath();
-    ctx.moveTo(leftBeamX - chainSpacing/2, leftBeamY);
-    ctx.lineTo(leftX - chainSpacing/2, leftY - panHeight/2);
+    ctx.moveTo(leftBeamX, leftBeamY);
+    ctx.lineTo(leftX, leftY - panHeight/2);
     ctx.stroke();
 
+    // Right pan chain
     ctx.beginPath();
-    ctx.moveTo(leftBeamX + chainSpacing/2, leftBeamY);
-    ctx.lineTo(leftX + chainSpacing/2, leftY - panHeight/2);
-    ctx.stroke();
-
-    // Right pan chains - two parallel chains to center
-    ctx.beginPath();
-    ctx.moveTo(rightBeamX - chainSpacing/2, rightBeamY);
-    ctx.lineTo(rightX - chainSpacing/2, rightY - panHeight/2);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(rightBeamX + chainSpacing/2, rightBeamY);
-    ctx.lineTo(rightX + chainSpacing/2, rightY - panHeight/2);
+    ctx.moveTo(rightBeamX, rightBeamY);
+    ctx.lineTo(rightX, rightY - panHeight/2);
     ctx.stroke();
 
     // Left pan
-    ctx.fillStyle = panColor;
-    ctx.fillRect(leftX - panWidth/2, leftY - panHeight/2, panWidth, panHeight);
+    if (images.pan) {
+        ctx.drawImage(images.pan, leftX - panWidth/2, leftY - panHeight/2, panWidth, panHeight);
+    } else {
+        // Fallback if image not loaded
+        ctx.fillStyle = panColor;
+        ctx.fillRect(leftX - panWidth/2, leftY - panHeight/2, panWidth, panHeight);
+    }
 
     // Right pan
-    ctx.fillRect(rightX - panWidth/2, rightY - panHeight/2, panWidth, panHeight);
+    if (images.pan) {
+        ctx.drawImage(images.pan, rightX - panWidth/2, rightY - panHeight/2, panWidth, panHeight);
+    } else {
+        // Fallback if image not loaded
+        ctx.fillStyle = panColor;
+        ctx.fillRect(rightX - panWidth/2, rightY - panHeight/2, panWidth, panHeight);
+    }
 }
 
 function drawDuplicationStation() {
@@ -1271,7 +1216,7 @@ function drawGround() {
 function drawHUD() {
     // Level indicator
     ctx.fillStyle = '#2d2d2d';
-    ctx.font = '20px Segoe UI, sans-serif';
+    ctx.font = '20px Poppins, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(`Level ${currentLevel}`, 20, 40);
 
@@ -1297,10 +1242,12 @@ function drawHUD() {
 
     let statusText = '';
     let statusColor = '#6b6b6b';
+    let statusY = 90; // Default Y position
 
     if (levelComplete) {
         statusText = 'Click to continue';
-        statusColor = '#5a8a8a';
+        statusColor = '#a0b4be'; // Bluish grey like balanced text
+        statusY = 40; // Align with level indicator
     } else if (leftCount === 0 || rightCount === 0) {
         statusText = 'Place objects on both sides';
     } else if (usingDuplicates) {
@@ -1311,9 +1258,9 @@ function drawHUD() {
 
     if (statusText) {
         ctx.fillStyle = statusColor;
-        ctx.font = '18px Segoe UI, sans-serif';
+        ctx.font = '18px Poppins, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(statusText, canvas.width / 2, 90);
+        ctx.fillText(statusText, canvas.width / 2, statusY);
     }
 
     // Restart button
@@ -1335,7 +1282,7 @@ function drawBalancedText() {
     } else {
         // Fallback: draw text with gradient
         const centerY = canvas.height / 2;
-        ctx.font = 'bold 120px Segoe UI, sans-serif';
+        ctx.font = 'bold 120px Poppins, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
@@ -1490,19 +1437,22 @@ function animate() {
             if (obj.type === 'magic8ball' && obj.isShaking && obj.isDragging) {
                 obj.shakeTime += dt;
 
-                // After 2 seconds of shaking, change weight
+                // After 2 seconds of shaking, change weight randomly
                 if (obj.shakeTime >= 2.0 && performance.now() - obj.lastWeightChangeTime > 2000) {
                     const weights = ['mystery', 'weight1', 'weight5', 'weight10'];
-                    const currentIndex = weights.indexOf(obj.ball8State);
-                    const newIndex = (currentIndex + 1) % weights.length;
-                    obj.ball8State = weights[newIndex];
+                    // Pick random weight different from current
+                    let newState = obj.ball8State;
+                    while (newState === obj.ball8State) {
+                        newState = weights[Math.floor(Math.random() * weights.length)];
+                    }
+                    obj.ball8State = newState;
 
                     // Update mass based on state
                     switch (obj.ball8State) {
                         case 'weight1': obj.mass = 1; break;
                         case 'weight5': obj.mass = 5; break;
                         case 'weight10': obj.mass = 10; break;
-                        default: obj.mass = 5; // Mystery defaults to 5
+                        default: obj.mass = 0; // Mystery has no weight
                     }
 
                     obj.shakeTime = 0;
