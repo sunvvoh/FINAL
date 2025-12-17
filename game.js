@@ -18,7 +18,9 @@ const imageList = {
     ball8Weight10: 'images/8BALL WEIGHT 10.png',
     balanced: 'images/BALANCED.png',
     pan: 'images/PAN.png',
-    anvil: 'images/ANVIL.png'
+    anvil: 'images/ANVIL.png',
+    beam: 'images/BEAM.png',
+    pillar: 'images/PILLAR.png'
 };
 
 function preloadImages(callback) {
@@ -196,14 +198,41 @@ function generateStaticGrainTexture(width, height, alpha = 0.12) {
     return grainCanvas;
 }
 
-// Apply static grain texture to an area
-function applyStaticGrainTexture(x, y, width, height) {
-    const grainTexture = generateStaticGrainTexture(Math.ceil(width), Math.ceil(height));
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = 0.6;
-    ctx.drawImage(grainTexture, Math.floor(x), Math.floor(y), width, height);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1.0;
+// Apply mosaic pixelation effect to a rectangular area
+function applyMosaicPixelation(x, y, width, height, pixelSize = 4) {
+    const sx = Math.floor(x);
+    const sy = Math.floor(y);
+    const sw = Math.ceil(width);
+    const sh = Math.ceil(height);
+
+    // Get image data
+    const imageData = ctx.getImageData(sx, sy, sw, sh);
+    const pixels = imageData.data;
+
+    // Create pixelated effect
+    for (let py = 0; py < sh; py += pixelSize) {
+        for (let px = 0; px < sw; px += pixelSize) {
+            // Sample color from top-left pixel of block
+            const i = (py * sw + px) * 4;
+            const r = pixels[i];
+            const g = pixels[i + 1];
+            const b = pixels[i + 2];
+            const a = pixels[i + 3];
+
+            // Fill entire block with sampled color
+            for (let by = 0; by < pixelSize && py + by < sh; by++) {
+                for (let bx = 0; bx < pixelSize && px + bx < sw; bx++) {
+                    const bi = ((py + by) * sw + (px + bx)) * 4;
+                    pixels[bi] = r;
+                    pixels[bi + 1] = g;
+                    pixels[bi + 2] = b;
+                    pixels[bi + 3] = a;
+                }
+            }
+        }
+    }
+
+    ctx.putImageData(imageData, sx, sy);
 }
 
 // Objects array
@@ -506,16 +535,19 @@ class PhysicsObject {
         // Draw special objects with images
         if (this.type === 'feather' && images.feather) {
             ctx.drawImage(images.feather, this.x, this.y, this.width, this.height);
+            applyMosaicPixelation(this.x, this.y, this.width, this.height, 3);
             return;
         }
 
         if (this.type === 'tissue' && images.tissue) {
             ctx.drawImage(images.tissue, this.x, this.y, this.width, this.height);
+            applyMosaicPixelation(this.x, this.y, this.width, this.height, 3);
             return;
         }
 
         if (this.type === 'tissueDropped' && images.tissueDropped) {
             ctx.drawImage(images.tissueDropped, this.x, this.y, this.width, this.height);
+            applyMosaicPixelation(this.x, this.y, this.width, this.height, 3);
             return;
         }
 
@@ -533,6 +565,7 @@ class PhysicsObject {
             }
             if (tissueImg) {
                 ctx.drawImage(tissueImg, this.x, this.y, this.width, this.height);
+                applyMosaicPixelation(this.x, this.y, this.width, this.height, 3);
                 return;
             }
         }
@@ -553,6 +586,7 @@ class PhysicsObject {
             }
             if (ballImg) {
                 ctx.drawImage(ballImg, this.x, this.y, this.width, this.height);
+                applyMosaicPixelation(this.x, this.y, this.width, this.height, 3);
             }
 
             // Reset shadow
@@ -565,6 +599,7 @@ class PhysicsObject {
         if (this.type === 'anvil') {
             if (images.anvil) {
                 ctx.drawImage(images.anvil, this.x, this.y, this.width, this.height);
+                applyMosaicPixelation(this.x, this.y, this.width, this.height, 3);
                 return;
             }
 
@@ -577,20 +612,14 @@ class PhysicsObject {
             return;
         }
 
-        // Draw normal objects with shapes and static grainy texture
+        // Draw normal objects with shapes (no texture)
         ctx.fillStyle = this.color;
         if (this.isCircle) {
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Apply static grainy texture to circle
-            const boundingX = Math.floor(this.x - this.radius);
-            const boundingY = Math.floor(this.y - this.radius);
-            const boundingSize = Math.ceil(this.radius * 2);
-            applyStaticGrainTexture(boundingX, boundingY, boundingSize, boundingSize);
-
-            // Fixed object indicator (no border for normal objects)
+            // Fixed object indicator
             if (this.isFixed) {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius * 0.3, 0, Math.PI * 2);
@@ -601,11 +630,7 @@ class PhysicsObject {
         } else {
             ctx.fillRect(this.x, this.y, this.width, this.height);
 
-            // Apply static grainy texture to rectangle
-            applyStaticGrainTexture(Math.floor(this.x), Math.floor(this.y),
-                                   Math.ceil(this.width), Math.ceil(this.height));
-
-            // Fixed object indicator (no border for normal objects)
+            // Fixed object indicator
             if (this.isFixed) {
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
@@ -1204,29 +1229,20 @@ function drawScale() {
     const baseY = scale.baseY;
     const pillarTop = baseY - scale.pillarHeight;
 
-    // Modernist scale colors - muted metallics
-    const baseColor = '#5a4a3a';      // Dark brown
-    const metalColor = '#6b6b6b';     // Medium gray
-    const panColor = '#8b8b8b';       // Light gray
+    // Base - using PAN image
+    if (images.pan) {
+        const baseWidth = 300;
+        const baseHeight = 50;
+        ctx.drawImage(images.pan, baseX - baseWidth/2, baseY - baseHeight, baseWidth, baseHeight);
+    }
 
-    // Base
-    ctx.fillStyle = baseColor;
-    ctx.beginPath();
-    ctx.moveTo(baseX - 150, baseY);
-    ctx.lineTo(baseX + 150, baseY);
-    ctx.lineTo(baseX + 125, baseY - 50);
-    ctx.lineTo(baseX - 125, baseY - 50);
-    ctx.closePath();
-    ctx.fill();
+    // Pillar - using PILLAR image
+    if (images.pillar) {
+        const pillarWidth = 50;
+        ctx.drawImage(images.pillar, baseX - pillarWidth/2, pillarTop, pillarWidth, scale.pillarHeight - 50);
+    }
 
-    // Pillar
-    ctx.fillStyle = metalColor;
-    ctx.fillRect(baseX - 25, pillarTop, 50, scale.pillarHeight - 50);
-
-    // Top ornament
-    ctx.beginPath();
-    ctx.arc(baseX, pillarTop - 25, 37.5, 0, Math.PI * 2);
-    ctx.fill();
+    // Ornament removed per user request
 
     // Get pan positions (needed for chains)
     const leftX = getLeftPanX();
@@ -1257,13 +1273,16 @@ function drawScale() {
     ctx.lineTo(rightX, rightY - panHeight/2);
     ctx.stroke();
 
-    // Beam (drawn OVER chains)
-    ctx.save();
-    ctx.translate(baseX, pillarTop + 25);
-    ctx.rotate(-scale.angle);
-    ctx.fillStyle = metalColor;
-    ctx.fillRect(-scale.armLength - 50, -20, scale.armLength * 2 + 100, 40);
-    ctx.restore();
+    // Beam - using BEAM image (drawn OVER chains)
+    if (images.beam) {
+        ctx.save();
+        ctx.translate(baseX, pillarTop + 25);
+        ctx.rotate(-scale.angle);
+        const beamWidth = scale.armLength * 2 + 100;
+        const beamHeight = 40;
+        ctx.drawImage(images.beam, -scale.armLength - 50, -20, beamWidth, beamHeight);
+        ctx.restore();
+    }
 
     // Left pan
     if (images.pan) {
