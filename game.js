@@ -344,14 +344,7 @@ class PhysicsObject {
             };
         }
 
-        if (cx > dupStation.x - dupStation.panWidth/2 && cx < dupStation.x + dupStation.panWidth/2) {
-            return {
-                overPan: true,
-                whichPan: 'dup',
-                panTop: dupStation.y - dupStation.panHeight,
-                panBottom: dupStation.y
-            };
-        }
+        // Duplicator pan removed per user request
 
         return { overPan: false, whichPan: null, panTop: 0, panBottom: 0 };
     }
@@ -371,10 +364,8 @@ class PhysicsObject {
             } else if (this.onPan === 'right') {
                 panX = getRightPanX();
                 panY = getRightPanY();
-            } else {
-                panX = dupStation.x;
-                panY = dupStation.y - dupStation.panHeight / 2;
             }
+            // Duplicator station removed
 
             // Update position based on pan center + stored horizontal offset
             // Pans stay level (don't rotate), so no rotation transform needed
@@ -436,9 +427,8 @@ class PhysicsObject {
                     panX = getLeftPanX();
                 } else if (panInfo.whichPan === 'right') {
                     panX = getRightPanX();
-                } else {
-                    panX = dupStation.x;
                 }
+                // Duplicator station removed
 
                 // Store the offset from pan center
                 if (this.isCircle) {
@@ -652,9 +642,7 @@ function generateLevel(levelNum) {
     scale.angle = 0;
     scale.targetAngle = 0;
     scale.angleVelocity = 0;
-    dupScreen.active = false;
-    dupScreen.input = '';
-    dupScreen.objectOnPan = null;
+    // Duplicator state reset removed per user request
 
     // Progressive object introduction based on level
     let movableObjects = [];
@@ -781,7 +769,7 @@ function createTissue(x, y, dropped = false) {
 
 function createAnvil() {
     const width = 180; // 120 * 1.5
-    const height = 180; // 120 * 1.5
+    const height = 240; // Extended height to prevent image squishing
     const weight = 10; // Heavy but balanced
     const anvil = new PhysicsObject(0, 0, width, height, weight, '#3a3a3a', false, false, 'anvil');
     anvil.anvilSlipSpeed = 150; // Pixels per second it slips down
@@ -866,39 +854,33 @@ function onPointerDown(e) {
     }
 
     if (gameState === 'playing') {
-        // Check restart button
-        if (isPointInButton(pos.x, pos.y, buttons.restart)) {
-            restart();
-            return;
-        }
+        // Restart button removed per user request
 
         if (levelComplete) return;
 
-        // Check if clicking on duplicator screen
-        if (pos.x >= dupScreen.x - dupScreen.width/2 &&
-            pos.x <= dupScreen.x + dupScreen.width/2 &&
-            pos.y >= dupScreen.y - dupScreen.height/2 &&
-            pos.y <= dupScreen.y + dupScreen.height/2) {
-            dupScreen.active = true;
-            return;
-        }
+        // Duplicator screen removed per user request
 
         // Check objects
         for (let i = objects.length - 1; i >= 0; i--) {
             if (objects[i].containsPoint(pos.x, pos.y) && !objects[i].isFixed) {
                 draggedObject = objects[i];
-                draggedObject.isDragging = true;
                 draggedObject.grounded = false;
                 draggedObject.onPan = null;
 
-                // Tissue box: start tissue pull mode
+                // Tissue box: start hold timer for tissue pull
                 if (draggedObject.type === 'tissuebox' && draggedObject.tissuesRemaining > 0) {
-                    draggedObject.tissueBeingPulled = true; // Show empty state immediately
-                    draggedObject.isDragging = false; // Tissue box cannot be dragged
-                    dragOffsetX = 0;
-                    dragOffsetY = 0;
+                    draggedObject.tissueGrabStartTime = performance.now();
+                    draggedObject.isDragging = false; // Not dragging yet, waiting to see if hold or drag
+                    if (draggedObject.isCircle) {
+                        dragOffsetX = pos.x - draggedObject.x;
+                        dragOffsetY = pos.y - draggedObject.y;
+                    } else {
+                        dragOffsetX = pos.x - draggedObject.x;
+                        dragOffsetY = pos.y - draggedObject.y;
+                    }
                 } else {
                     // Normal dragging for other objects
+                    draggedObject.isDragging = true;
                     if (draggedObject.isCircle) {
                         dragOffsetX = pos.x - draggedObject.x;
                         dragOffsetY = pos.y - draggedObject.y;
@@ -907,12 +889,9 @@ function onPointerDown(e) {
                         dragOffsetY = pos.y - draggedObject.y;
                     }
                 }
-                dupScreen.active = false;
                 return;
             }
         }
-
-        dupScreen.active = false;
     }
 }
 
@@ -922,7 +901,24 @@ function onPointerMove(e) {
     const oldX = draggedObject.x;
     const oldY = draggedObject.y;
 
-    // Tissue box: spawn tissue on first drag movement
+    // Tissue box: check if immediate drag (before 2 seconds) or hold for tissue pull
+    if (draggedObject.type === 'tissuebox' && draggedObject.tissueGrabStartTime > 0) {
+        const holdTime = (performance.now() - draggedObject.tissueGrabStartTime) / 1000; // In seconds
+
+        if (holdTime < 2.0 && !draggedObject.isDragging && !draggedObject.tissueBeingPulled) {
+            // Movement detected before 2 seconds - pick up entire box
+            const dx = Math.abs(pos.x - (draggedObject.x + dragOffsetX));
+            const dy = Math.abs(pos.y - (draggedObject.y + dragOffsetY));
+
+            if (dx > 5 || dy > 5) {
+                // Significant movement - switch to dragging entire box
+                draggedObject.isDragging = true;
+                draggedObject.tissueGrabStartTime = 0;
+            }
+        }
+    }
+
+    // Tissue box: spawn tissue if in tissue pull mode
     if (draggedObject.type === 'tissuebox' && draggedObject.tissueBeingPulled && !pulledTissue) {
         // Spawn tissue at cursor
         pulledTissue = createTissue(pos.x - 45, pos.y - 45, false);
@@ -931,6 +927,9 @@ function onPointerMove(e) {
         // Update tissue box weight
         draggedObject.tissuesRemaining--;
         draggedObject.mass = Math.max(1, 6 - (5 - draggedObject.tissuesRemaining)); // 6kg -> 1kg
+
+        // Reset grab timer
+        draggedObject.tissueGrabStartTime = 0;
     }
 
     // Update pulled tissue position if exists
@@ -938,7 +937,7 @@ function onPointerMove(e) {
         pulledTissue.x = pos.x - 45;
         pulledTissue.y = pos.y - 45;
     } else if (draggedObject.isDragging) {
-        // Normal object dragging (not tissue box in pull mode)
+        // Normal object dragging (including tissue box when dragged immediately)
         draggedObject.x = pos.x - dragOffsetX;
         draggedObject.y = pos.y - dragOffsetY;
 
@@ -969,11 +968,37 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
     if (draggedObject) {
+        // Check if tissue box was held for 2 seconds without dragging
+        if (draggedObject.type === 'tissuebox' &&
+            draggedObject.tissueGrabStartTime > 0 &&
+            !draggedObject.isDragging &&
+            draggedObject.tissuesRemaining > 0) {
+            const holdTime = (performance.now() - draggedObject.tissueGrabStartTime) / 1000;
+
+            if (holdTime >= 2.0) {
+                // Held for 2 seconds - pull a tissue
+                draggedObject.tissueBeingPulled = true;
+                const pos = getEventPos(e);
+
+                // Spawn tissue at cursor
+                pulledTissue = createTissue(pos.x - 45, pos.y - 45, false);
+                pulledTissue.isDragging = false; // Immediately drop it
+                pulledTissue.type = 'tissueDropped';
+                objects.push(pulledTissue);
+                pulledTissue = null;
+
+                // Update tissue box weight
+                draggedObject.tissuesRemaining--;
+                draggedObject.mass = Math.max(1, 6 - (5 - draggedObject.tissuesRemaining)); // 6kg -> 1kg
+            }
+        }
+
         draggedObject.isDragging = false;
 
-        // Reset tissue box state - return to "with tissue" if tissues remain
+        // Reset tissue box state
         if (draggedObject.type === 'tissuebox') {
             draggedObject.tissueBeingPulled = false;
+            draggedObject.tissueGrabStartTime = 0;
         }
 
         draggedObject = null;
@@ -1001,15 +1026,59 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent ri
 window.addEventListener('keydown', (e) => {
     // Secret dev mode during gameplay
     if (gameState === 'playing') {
-        if (!dupScreen.active) {
-            secretInput += e.key.toLowerCase();
-            if (secretInput.length > 10) {
-                secretInput = secretInput.slice(-10);
+        secretInput += e.key.toLowerCase();
+        if (secretInput.length > 10) {
+            secretInput = secretInput.slice(-10);
+        }
+        if (secretInput.includes('sunwoo')) {
+            devMode = !devMode;
+            secretInput = '';
+        }
+
+        // Spawn special objects when '6' is pressed in dev mode
+        if (e.key === '6' && devMode) {
+            const margin = 200;
+            const spawnWidth = canvas.width - margin * 2;
+
+            // Spawn 2 feathers
+            for (let i = 0; i < 2; i++) {
+                const feather = createFeather();
+                const randomX = margin + Math.random() * spawnWidth;
+                feather.x = randomX - feather.width/2;
+                feather.y = groundY - feather.height;
+                feather.grounded = true;
+                objects.push(feather);
             }
-            if (secretInput.includes('sunwoo')) {
-                devMode = !devMode;
-                secretInput = '';
+
+            // Spawn 2 tissue boxes
+            for (let i = 0; i < 2; i++) {
+                const tissueBox = createTissueBox();
+                const randomX = margin + Math.random() * spawnWidth;
+                tissueBox.x = randomX - tissueBox.width/2;
+                tissueBox.y = groundY - tissueBox.height;
+                tissueBox.grounded = true;
+                objects.push(tissueBox);
             }
+
+            // Spawn 2 magic 8 balls
+            for (let i = 0; i < 2; i++) {
+                const magic8ball = createMagic8Ball();
+                const randomX = margin + Math.random() * spawnWidth;
+                magic8ball.x = randomX;
+                magic8ball.y = groundY - magic8ball.radius;
+                magic8ball.grounded = true;
+                objects.push(magic8ball);
+            }
+
+            // Spawn 1 anvil
+            const anvil = createAnvil();
+            const randomX = margin + Math.random() * spawnWidth;
+            anvil.x = randomX - anvil.width/2;
+            anvil.y = groundY - anvil.height;
+            anvil.grounded = true;
+            objects.push(anvil);
+
+            return;
         }
     }
 
@@ -1027,20 +1096,7 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (dupScreen.active) {
-        if (e.key === 'Enter') {
-            spawnDuplicates();
-            e.preventDefault();
-        } else if (e.key === 'Escape') {
-            dupScreen.active = false;
-            dupScreen.input = '';
-        } else if (e.key === 'Backspace') {
-            dupScreen.input = dupScreen.input.slice(0, -1);
-            e.preventDefault();
-        } else if (e.key.match(/^[0-9]$/) && dupScreen.input.length < 2) {
-            dupScreen.input += e.key;
-        }
-    }
+    // Duplicator keyboard handling removed per user request
 });
 
 function spawnDuplicates() {
@@ -1416,57 +1472,14 @@ function drawGround() {
 }
 
 function drawHUD() {
-    // Level indicator
-    ctx.fillStyle = '#2d2d2d';
-    ctx.font = '20px Poppins, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Level ${currentLevel}`, 20, 40);
-
-    // Balance indicator
-    let leftCount = 0;
-    let rightCount = 0;
-    for (const obj of objects) {
-        if (obj.onPan === 'left' && obj.grounded) leftCount++;
-        if (obj.onPan === 'right' && obj.grounded) rightCount++;
-    }
-
-    // Check for duplicate objects
-    let usingDuplicates = false;
-    if (leftCount === 1 && rightCount === 1) {
-        let leftObj = objects.find(o => o.onPan === 'left' && o.grounded);
-        let rightObj = objects.find(o => o.onPan === 'right' && o.grounded);
-        if (leftObj && rightObj &&
-            leftObj.mass === rightObj.mass &&
-            leftObj.color === rightObj.color) {
-            usingDuplicates = true;
-        }
-    }
-
-    let statusText = '';
-    let statusColor = '#6b6b6b';
-    let statusY = 90; // Default Y position
-
+    // All top UI elements removed per user request
+    // Only show "Click to continue" when level is complete
     if (levelComplete) {
-        statusText = 'Click to continue';
-        statusColor = '#a0b4be'; // Bluish grey like balanced text
-        statusY = 40; // Align with level indicator
-    } else if (leftCount === 0 || rightCount === 0) {
-        statusText = 'Place objects on both sides';
-    } else if (usingDuplicates) {
-        statusText = 'Use different objects on each side';
-        statusColor = '#c97b63';
-    }
-    // Removed: "Balance the scale" text and countdown
-
-    if (statusText) {
-        ctx.fillStyle = statusColor;
+        ctx.fillStyle = '#a0b4be'; // Bluish grey like balanced text
         ctx.font = '18px Poppins, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(statusText, canvas.width / 2, statusY);
+        ctx.fillText('Click to continue', canvas.width / 2, 40);
     }
-
-    // Restart button
-    drawButton(buttons.restart, '#8b7d7d');
 }
 
 function drawBalancedText() {
@@ -1584,7 +1597,7 @@ function drawGame() {
     drawGround();
     drawBalancedText(); // Draw balanced text in background
     drawScale();
-    drawDuplicationStation();
+    // Duplicator station removed per user request
     for (const obj of objects) {
         obj.draw();
     }
@@ -1717,7 +1730,7 @@ function animate() {
             }
         }
 
-        checkDuplicationPan();
+        // checkDuplicationPan() removed per user request
         updateScale(dt);
         drawGame();
         applyGrainTexture(0.04);
