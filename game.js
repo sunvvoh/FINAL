@@ -760,8 +760,8 @@ function createTissue(x, y, dropped = false) {
 }
 
 function createAnvil() {
-    const width = 180; // 120 * 1.5
-    const height = 240; // Extended height to prevent image squishing
+    const width = 240; // Extended width to prevent image squishing
+    const height = 180; // 120 * 1.5
     const weight = 10; // Heavy but balanced
     const anvil = new PhysicsObject(0, 0, width, height, weight, '#3a3a3a', false, false, 'anvil');
     anvil.anvilSlipSpeed = 150; // Pixels per second it slips down
