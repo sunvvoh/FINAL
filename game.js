@@ -1,6 +1,48 @@
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
+// Image preloading
+const images = {};
+let imagesLoaded = 0;
+let totalImages = 0;
+const imageList = {
+    feather: 'images/FEATHER.png',
+    tissueBoxFull: 'images/TISSUE BOX (WITH TISSUE).png',
+    tissueBoxGrabbed: 'images/TISSUE BOX (TISSUE GRABBED).png',
+    tissueBoxEmpty: 'images/TISSUE BOX (TISSUE GONE).png',
+    ball8Mystery: 'images/8BALL MYSTERY WEIGHT.png',
+    ball8Weight1: 'images/8BALL WEIGHT 1.png',
+    ball8Weight5: 'images/8BALL WEIGHT 5.png',
+    ball8Weight10: 'images/8BALL WEIGHT 10.png'
+};
+
+function preloadImages(callback) {
+    totalImages = Object.keys(imageList).length;
+    if (totalImages === 0) {
+        callback();
+        return;
+    }
+
+    for (const [key, src] of Object.entries(imageList)) {
+        const img = new Image();
+        img.onload = () => {
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                callback();
+            }
+        };
+        img.onerror = () => {
+            console.error(`Failed to load image: ${src}`);
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                callback();
+            }
+        };
+        img.src = src;
+        images[key] = img;
+    }
+}
+
 // Resize canvas
 function resize() {
     canvas.width = window.innerWidth;
@@ -122,21 +164,36 @@ const objectColors = [
 
 // Physics object class
 class PhysicsObject {
-    constructor(x, y, width, height, mass, color, isCircle = false, isFixed = false) {
+    constructor(x, y, width, height, mass, color, isCircle = false, isFixed = false, type = 'normal') {
         this.id = objectIdCounter++;
         this.x = x;
         this.y = y;
         this.width = width;
         this.height = height;
         this.mass = mass;
+        this.baseMass = mass; // Store original mass
         this.color = color;
         this.isCircle = isCircle;
         this.isFixed = isFixed;
+        this.type = type; // 'normal', 'feather', 'tissuebox', 'magic8ball'
         this.vx = 0;
         this.vy = 0;
         this.grounded = false;
         this.onPan = null;
         this.isDragging = false;
+
+        // Feather properties
+        this.swayPhase = Math.random() * Math.PI * 2;
+        this.swaySpeed = 2 + Math.random();
+
+        // Tissue box properties
+        this.tissuesRemaining = 5;
+        this.tissueBeingPulled = false;
+
+        // Magic 8 ball properties
+        this.ball8State = 'mystery'; // 'mystery', 'weight1', 'weight5', 'weight10'
+        this.shakeIntensity = 0;
+        this.lastShakeTime = 0;
     }
 
     get radius() {
@@ -230,10 +287,26 @@ class PhysicsObject {
             return;
         }
 
-        this.vy += gravity * dt;
+        // Apply gravity (reduced for feathers)
+        if (this.type === 'feather') {
+            this.vy += gravity * dt * 0.15; // Much slower fall
+            // Add sway motion
+            this.swayPhase += this.swaySpeed * dt;
+            const swayForce = Math.sin(this.swayPhase) * 30;
+            this.vx += swayForce * dt;
+            // Wind resistance
+            this.vx *= 0.85; // High air resistance
+            this.vy *= 0.92; // Floaty
+        } else {
+            this.vy += gravity * dt;
+        }
+
         this.x += this.vx * dt;
         this.y += this.vy * dt;
-        this.vx *= 0.99;
+
+        if (this.type !== 'feather') {
+            this.vx *= 0.99;
+        }
 
         const objectTop = this.isCircle ? this.y - this.radius : this.y;
 
@@ -315,6 +388,40 @@ class PhysicsObject {
     }
 
     draw() {
+        // Draw special objects with images
+        if (this.type === 'feather' && images.feather) {
+            ctx.drawImage(images.feather, this.x, this.y, this.width, this.height);
+            return;
+        }
+
+        if (this.type === 'tissuebox') {
+            let tissueImg = images.tissueBoxFull;
+            if (this.tissueBeingPulled && images.tissueBoxGrabbed) {
+                tissueImg = images.tissueBoxGrabbed;
+            } else if (this.tissuesRemaining === 0 && images.tissueBoxEmpty) {
+                tissueImg = images.tissueBoxEmpty;
+            }
+            if (tissueImg) {
+                ctx.drawImage(tissueImg, this.x, this.y, this.width, this.height);
+                return;
+            }
+        }
+
+        if (this.type === 'magic8ball') {
+            let ballImg;
+            switch (this.ball8State) {
+                case 'weight1': ballImg = images.ball8Weight1; break;
+                case 'weight5': ballImg = images.ball8Weight5; break;
+                case 'weight10': ballImg = images.ball8Weight10; break;
+                default: ballImg = images.ball8Mystery;
+            }
+            if (ballImg) {
+                ctx.drawImage(ballImg, this.x, this.y, this.width, this.height);
+                return;
+            }
+        }
+
+        // Draw normal objects with shapes (fallback)
         ctx.fillStyle = this.color;
         if (this.isCircle) {
             ctx.beginPath();
@@ -323,7 +430,7 @@ class PhysicsObject {
             ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(255,255,255,0.3)';
             ctx.lineWidth = this.isFixed ? 3 : 2;
             ctx.stroke();
-            
+
             if (this.isFixed) {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius * 0.3, 0, Math.PI * 2);
@@ -336,11 +443,11 @@ class PhysicsObject {
             ctx.strokeStyle = this.isFixed ? '#ffffff' : 'rgba(255,255,255,0.3)';
             ctx.lineWidth = this.isFixed ? 3 : 2;
             ctx.strokeRect(this.x, this.y, this.width, this.height);
-            
+
             if (this.isFixed) {
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(this.x + this.width * 0.3, this.y + this.height * 0.3, 
+                ctx.strokeRect(this.x + this.width * 0.3, this.y + this.height * 0.3,
                                this.width * 0.4, this.height * 0.4);
             }
         }
@@ -502,6 +609,24 @@ function createRandomObject(weight, isFixed) {
     const color = objectColors[Math.floor(Math.random() * objectColors.length)];
 
     return new PhysicsObject(0, 0, size, size, weight, color, isCircle, isFixed);
+}
+
+// Create special objects
+function createFeather() {
+    const size = 80;
+    return new PhysicsObject(0, 0, size, size, 0.1, '#f5f5f5', false, false, 'feather');
+}
+
+function createTissueBox() {
+    const width = 100;
+    const height = 80;
+    const weight = 3; // Base weight with tissues
+    return new PhysicsObject(0, 0, width, height, weight, '#d8c3a5', false, false, 'tissuebox');
+}
+
+function createMagic8Ball() {
+    const size = 90;
+    return new PhysicsObject(0, 0, size, size, 5, '#2d2d2d', true, false, 'magic8ball');
 }
 
 // Restart function
@@ -1228,4 +1353,9 @@ function animate() {
 
 // Initialize
 updateButtonPositions();
-animate();
+
+// Start game after images load
+preloadImages(() => {
+    console.log('All images loaded!');
+    animate();
+});
