@@ -28,7 +28,8 @@ const scale = {
     angle: 0,
     targetAngle: 0,
     angleVelocity: 0,
-    maxAngle: Math.PI / 4.5
+    maxAngle: Math.PI / 4.5,
+    chainLength: 200  // Length of chains hanging from beam to pans
 };
 
 // Pan properties
@@ -44,11 +45,11 @@ updateScalePosition();
 window.addEventListener('resize', updateScalePosition);
 
 function getLeftPanY() {
-    return scale.baseY - scale.pillarHeight + 50 + Math.sin(scale.angle) * scale.armLength;
+    return scale.baseY - scale.pillarHeight + 50 + Math.sin(scale.angle) * scale.armLength + scale.chainLength;
 }
 
 function getRightPanY() {
-    return scale.baseY - scale.pillarHeight + 50 - Math.sin(scale.angle) * scale.armLength;
+    return scale.baseY - scale.pillarHeight + 50 - Math.sin(scale.angle) * scale.armLength + scale.chainLength;
 }
 
 function getLeftPanX() {
@@ -103,11 +104,20 @@ const balanceTimeRequired = 1.0;
 let objects = [];
 let objectIdCounter = 0;
 
-// Color palette for objects
+// Color palette for objects - Modernist muted/pastel tones
 const objectColors = [
-    '#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3', 
-    '#f38181', '#aa96da', '#fcbad3', '#a8d8ea',
-    '#ff9a3c', '#7bc043', '#ee4035', '#0392cf'
+    '#2d2d2d', // Black
+    '#5a8a8a', // Muted teal
+    '#d4a574', // Sand/tan
+    '#8b7d7d', // Gray-brown
+    '#c97b63', // Muted coral
+    '#7a9d9d', // Sage gray
+    '#b8a89a', // Warm gray
+    '#a5a5a5', // Light gray
+    '#6b8e8e', // Dark teal
+    '#d8c3a5', // Beige
+    '#8e7e7e', // Mauve gray
+    '#5d7a7a'  // Deep teal-gray
 ];
 
 // Physics object class
@@ -811,31 +821,29 @@ function updateScale(dt) {
 
 // Drawing functions
 function drawStartScreen() {
-    // Background
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Background already cleared with cream color
 
     // Title
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#2d2d2d';
     ctx.font = 'bold 48px Segoe UI, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Balance Scale', canvas.width / 2, canvas.height / 2 - 100);
 
     ctx.font = '24px Segoe UI, sans-serif';
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = '#6b6b6b';
     ctx.fillText('A Physics Puzzle Game', canvas.width / 2, canvas.height / 2 - 50);
 
     // Play button
-    drawButton(buttons.play, '#4ecdc4');
+    drawButton(buttons.play, '#5a8a8a');
 }
 
 function drawButton(btn, color, disabled = false) {
-    ctx.fillStyle = disabled ? '#333333' : color;
+    ctx.fillStyle = disabled ? '#a5a5a5' : color;
     ctx.beginPath();
     ctx.roundRect(btn.x, btn.y, btn.width, btn.height, 10);
     ctx.fill();
 
-    ctx.fillStyle = disabled ? '#666666' : '#000000';
+    ctx.fillStyle = disabled ? '#6b6b6b' : '#f5f5f5';
     ctx.font = '18px Segoe UI, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(btn.text, btn.x + btn.width / 2, btn.y + btn.height / 2 + 6);
@@ -843,17 +851,17 @@ function drawButton(btn, color, disabled = false) {
 
 function drawPauseScreen() {
     // Dim background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Pause text
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#f5f5f5';
     ctx.font = 'bold 36px Segoe UI, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2 - 100);
 
-    drawButton(buttons.resume, '#4ecdc4');
-    drawButton(buttons.quitToMenu, '#ff6b6b');
+    drawButton(buttons.resume, '#5a8a8a');
+    drawButton(buttons.quitToMenu, '#c97b63');
 }
 
 function drawScale() {
@@ -861,9 +869,10 @@ function drawScale() {
     const baseY = scale.baseY;
     const pillarTop = baseY - scale.pillarHeight;
 
-    const baseColor = '#8b7355';
-    const metalColor = '#c4a052';
-    const panColor = '#cd853f';
+    // Modernist scale colors - muted metallics
+    const baseColor = '#5a4a3a';      // Dark brown
+    const metalColor = '#6b6b6b';     // Medium gray
+    const panColor = '#8b8b8b';       // Light gray
 
     // Base
     ctx.fillStyle = baseColor;
@@ -905,32 +914,31 @@ function drawScale() {
     const rightBeamX = baseX + Math.cos(-scale.angle) * scale.armLength - Math.sin(-scale.angle) * 0;
     const rightBeamY = beamY + Math.sin(-scale.angle) * scale.armLength + Math.cos(-scale.angle) * 0;
 
-    // Draw chains (4 chains per pan - 2 on each side)
-    ctx.strokeStyle = '#8b8b8b';
-    ctx.lineWidth = 3;
+    // Draw chains (2 chains per pan - hanging from beam end to pan center)
+    ctx.strokeStyle = '#4a4a4a';      // Dark gray chains
+    ctx.lineWidth = 4;
 
-    // Left pan chains
-    const leftChainOffset = panWidth * 0.35;
+    // Left pan chains - two parallel chains to center
+    const chainSpacing = 30;
     ctx.beginPath();
-    ctx.moveTo(leftBeamX - leftChainOffset, leftBeamY);
-    ctx.lineTo(leftX - leftChainOffset, leftY - panHeight/2);
+    ctx.moveTo(leftBeamX - chainSpacing/2, leftBeamY);
+    ctx.lineTo(leftX - chainSpacing/2, leftY - panHeight/2);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(leftBeamX + leftChainOffset, leftBeamY);
-    ctx.lineTo(leftX + leftChainOffset, leftY - panHeight/2);
+    ctx.moveTo(leftBeamX + chainSpacing/2, leftBeamY);
+    ctx.lineTo(leftX + chainSpacing/2, leftY - panHeight/2);
     ctx.stroke();
 
-    // Right pan chains
-    const rightChainOffset = panWidth * 0.35;
+    // Right pan chains - two parallel chains to center
     ctx.beginPath();
-    ctx.moveTo(rightBeamX - rightChainOffset, rightBeamY);
-    ctx.lineTo(rightX - rightChainOffset, rightY - panHeight/2);
+    ctx.moveTo(rightBeamX - chainSpacing/2, rightBeamY);
+    ctx.lineTo(rightX - chainSpacing/2, rightY - panHeight/2);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(rightBeamX + rightChainOffset, rightBeamY);
-    ctx.lineTo(rightX + rightChainOffset, rightY - panHeight/2);
+    ctx.moveTo(rightBeamX + chainSpacing/2, rightBeamY);
+    ctx.lineTo(rightX + chainSpacing/2, rightY - panHeight/2);
     ctx.stroke();
 
     // Left pan
@@ -999,9 +1007,10 @@ function drawDuplicationStation() {
 }
 
 function drawGround() {
-    const bgColor = '#1a1a2e';
-    const groundColor = '#2d2d44';
-    const gridColor = '#3d3d54';
+    // Modernist color scheme - cream/beige tones
+    const bgColor = '#e8e4d9';        // Warm cream
+    const groundColor = '#d4cfc3';     // Lighter beige
+    const gridColor = '#c4bfb3';       // Subtle grid
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, groundY);
@@ -1009,19 +1018,22 @@ function drawGround() {
     ctx.fillStyle = groundColor;
     ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
 
+    // Subtle grid lines
     ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
     for (let x = 0; x < canvas.width; x += 50) {
         ctx.beginPath();
         ctx.moveTo(x, groundY);
         ctx.lineTo(x, canvas.height);
         ctx.stroke();
     }
+    ctx.globalAlpha = 1.0;
 }
 
 function drawHUD() {
     // Level indicator
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#2d2d2d';
     ctx.font = '20px Segoe UI, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(`Level ${currentLevel}`, 20, 40);
@@ -1039,27 +1051,27 @@ function drawHUD() {
     if (leftCount === 1 && rightCount === 1) {
         let leftObj = objects.find(o => o.onPan === 'left' && o.grounded);
         let rightObj = objects.find(o => o.onPan === 'right' && o.grounded);
-        if (leftObj && rightObj && 
-            leftObj.mass === rightObj.mass && 
+        if (leftObj && rightObj &&
+            leftObj.mass === rightObj.mass &&
             leftObj.color === rightObj.color) {
             usingDuplicates = true;
         }
     }
 
     let statusText = '';
-    let statusColor = '#888888';
+    let statusColor = '#6b6b6b';
 
     if (levelComplete) {
-        statusText = '🎉 Balanced! Click to continue';
-        statusColor = '#44ff44';
+        statusText = '✓ Balanced! Click to continue';
+        statusColor = '#5a8a8a';
     } else if (leftCount === 0 || rightCount === 0) {
         statusText = 'Place objects on both sides';
     } else if (usingDuplicates) {
         statusText = 'Use different objects on each side';
-        statusColor = '#ff9966';
+        statusColor = '#c97b63';
     } else if (Math.abs(scale.angle) < balanceThreshold) {
         statusText = `Balancing... ${Math.max(0, (balanceTimeRequired - balanceTimer)).toFixed(1)}s`;
-        statusColor = '#4ecdc4';
+        statusColor = '#5a8a8a';
     } else {
         statusText = 'Balance the scale';
     }
@@ -1070,7 +1082,7 @@ function drawHUD() {
     ctx.fillText(statusText, canvas.width / 2, 90);
 
     // Restart button
-    drawButton(buttons.restart, '#666666');
+    drawButton(buttons.restart, '#8b7d7d');
 }
 
 function drawDevPanel() {
@@ -1166,6 +1178,21 @@ canvas.addEventListener('click', (e) => {
     }
 });
 
+// Grain texture function for modernist aesthetic
+function applyGrainTexture(alpha = 0.03) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+
+    for (let i = 0; i < pixels.length; i += 4) {
+        const noise = (Math.random() - 0.5) * 255 * alpha;
+        pixels[i] += noise;     // R
+        pixels[i + 1] += noise; // G
+        pixels[i + 2] += noise; // B
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+
 // Animation loop
 let lastTime = performance.now();
 
@@ -1176,12 +1203,13 @@ function animate() {
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
 
-    // Clear
-    ctx.fillStyle = '#1a1a2e';
+    // Clear with cream background
+    ctx.fillStyle = '#e8e4d9';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (gameState === 'start') {
         drawStartScreen();
+        applyGrainTexture(0.04);
     } else if (gameState === 'playing') {
         // Update
         for (const obj of objects) {
@@ -1190,9 +1218,11 @@ function animate() {
         checkDuplicationPan();
         updateScale(dt);
         drawGame();
+        applyGrainTexture(0.04);
     } else if (gameState === 'paused') {
         drawGame();
         drawPauseScreen();
+        applyGrainTexture(0.04);
     }
 }
 
