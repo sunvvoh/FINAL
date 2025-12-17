@@ -856,23 +856,18 @@ function onPointerDown(e) {
         for (let i = objects.length - 1; i >= 0; i--) {
             if (objects[i].containsPoint(pos.x, pos.y) && !objects[i].isFixed) {
                 draggedObject = objects[i];
+                draggedObject.isDragging = true;
                 draggedObject.grounded = false;
                 draggedObject.onPan = null;
 
-                // Tissue box: start hold timer for tissue pull
+                // Tissue box: start tissue pull mode
                 if (draggedObject.type === 'tissuebox' && draggedObject.tissuesRemaining > 0) {
-                    draggedObject.tissueGrabStartTime = performance.now();
-                    draggedObject.isDragging = false; // Not dragging yet, waiting to see if hold or drag
-                    if (draggedObject.isCircle) {
-                        dragOffsetX = pos.x - draggedObject.x;
-                        dragOffsetY = pos.y - draggedObject.y;
-                    } else {
-                        dragOffsetX = pos.x - draggedObject.x;
-                        dragOffsetY = pos.y - draggedObject.y;
-                    }
+                    draggedObject.tissueBeingPulled = true; // Show empty state immediately
+                    draggedObject.isDragging = false; // Tissue box cannot be dragged
+                    dragOffsetX = 0;
+                    dragOffsetY = 0;
                 } else {
                     // Normal dragging for other objects
-                    draggedObject.isDragging = true;
                     if (draggedObject.isCircle) {
                         dragOffsetX = pos.x - draggedObject.x;
                         dragOffsetY = pos.y - draggedObject.y;
@@ -893,24 +888,7 @@ function onPointerMove(e) {
     const oldX = draggedObject.x;
     const oldY = draggedObject.y;
 
-    // Tissue box: check if immediate drag (before 2 seconds) or hold for tissue pull
-    if (draggedObject.type === 'tissuebox' && draggedObject.tissueGrabStartTime > 0) {
-        const holdTime = (performance.now() - draggedObject.tissueGrabStartTime) / 1000; // In seconds
-
-        if (holdTime < 2.0 && !draggedObject.isDragging && !draggedObject.tissueBeingPulled) {
-            // Movement detected before 2 seconds - pick up entire box
-            const dx = Math.abs(pos.x - (draggedObject.x + dragOffsetX));
-            const dy = Math.abs(pos.y - (draggedObject.y + dragOffsetY));
-
-            if (dx > 5 || dy > 5) {
-                // Significant movement - switch to dragging entire box
-                draggedObject.isDragging = true;
-                draggedObject.tissueGrabStartTime = 0;
-            }
-        }
-    }
-
-    // Tissue box: spawn tissue if in tissue pull mode
+    // Tissue box: spawn tissue on first drag movement
     if (draggedObject.type === 'tissuebox' && draggedObject.tissueBeingPulled && !pulledTissue) {
         // Spawn tissue at cursor
         pulledTissue = createTissue(pos.x - 45, pos.y - 45, false);
@@ -919,9 +897,6 @@ function onPointerMove(e) {
         // Update tissue box weight
         draggedObject.tissuesRemaining--;
         draggedObject.mass = Math.max(1, 6 - (5 - draggedObject.tissuesRemaining)); // 6kg -> 1kg
-
-        // Reset grab timer
-        draggedObject.tissueGrabStartTime = 0;
     }
 
     // Update pulled tissue position if exists
@@ -929,7 +904,7 @@ function onPointerMove(e) {
         pulledTissue.x = pos.x - 45;
         pulledTissue.y = pos.y - 45;
     } else if (draggedObject.isDragging) {
-        // Normal object dragging (including tissue box when dragged immediately)
+        // Normal object dragging (not tissue box in pull mode)
         draggedObject.x = pos.x - dragOffsetX;
         draggedObject.y = pos.y - dragOffsetY;
 
@@ -952,37 +927,11 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
     if (draggedObject) {
-        // Check if tissue box was held for 2 seconds without dragging
-        if (draggedObject.type === 'tissuebox' &&
-            draggedObject.tissueGrabStartTime > 0 &&
-            !draggedObject.isDragging &&
-            draggedObject.tissuesRemaining > 0) {
-            const holdTime = (performance.now() - draggedObject.tissueGrabStartTime) / 1000;
-
-            if (holdTime >= 2.0) {
-                // Held for 2 seconds - pull a tissue
-                draggedObject.tissueBeingPulled = true;
-                const pos = getEventPos(e);
-
-                // Spawn tissue at cursor
-                pulledTissue = createTissue(pos.x - 45, pos.y - 45, false);
-                pulledTissue.isDragging = false; // Immediately drop it
-                pulledTissue.type = 'tissueDropped';
-                objects.push(pulledTissue);
-                pulledTissue = null;
-
-                // Update tissue box weight
-                draggedObject.tissuesRemaining--;
-                draggedObject.mass = Math.max(1, 6 - (5 - draggedObject.tissuesRemaining)); // 6kg -> 1kg
-            }
-        }
-
         draggedObject.isDragging = false;
 
-        // Reset tissue box state
+        // Reset tissue box state - return to "with tissue" if tissues remain
         if (draggedObject.type === 'tissuebox') {
             draggedObject.tissueBeingPulled = false;
-            draggedObject.tissueGrabStartTime = 0;
         }
 
         draggedObject = null;
