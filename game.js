@@ -556,6 +556,17 @@ function generateLevel(levelNum) {
         });
     }
 
+    // Add special objects based on level
+    if (levelNum >= 3) {
+        movableObjects.push(createFeather());
+    }
+    if (levelNum >= 5) {
+        movableObjects.push(createTissueBox());
+    }
+    if (levelNum >= 7) {
+        movableObjects.push(createMagic8Ball());
+    }
+
     // Position fixed objects on pans
     let leftPanX = getLeftPanX();
     let rightPanX = getRightPanX();
@@ -724,6 +735,19 @@ function onPointerDown(e) {
         // Check objects
         for (let i = objects.length - 1; i >= 0; i--) {
             if (objects[i].containsPoint(pos.x, pos.y) && !objects[i].isFixed) {
+                // Special interaction: Tissue box (Shift+Click or Right-click to pull tissue)
+                if (objects[i].type === 'tissuebox' && (e.shiftKey || e.button === 2)) {
+                    if (objects[i].tissuesRemaining > 0) {
+                        objects[i].tissuesRemaining--;
+                        objects[i].mass = 3 - (5 - objects[i].tissuesRemaining) * 0.5; // Reduce weight
+                        objects[i].tissueBeingPulled = true;
+                        setTimeout(() => {
+                            objects[i].tissueBeingPulled = false;
+                        }, 200);
+                    }
+                    return;
+                }
+
                 draggedObject = objects[i];
                 draggedObject.isDragging = true;
                 draggedObject.grounded = false;
@@ -747,8 +771,41 @@ function onPointerDown(e) {
 function onPointerMove(e) {
     if (!draggedObject) return;
     const pos = getEventPos(e);
+    const oldX = draggedObject.x;
+    const oldY = draggedObject.y;
     draggedObject.x = pos.x - dragOffsetX;
     draggedObject.y = pos.y - dragOffsetY;
+
+    // Magic 8 ball shake detection
+    if (draggedObject.type === 'magic8ball') {
+        const dx = draggedObject.x - oldX;
+        const dy = draggedObject.y - oldY;
+        const speed = Math.sqrt(dx * dx + dy * dy);
+        draggedObject.shakeIntensity += speed * 0.5;
+
+        // Shake threshold reached - change weight!
+        if (draggedObject.shakeIntensity > 100 && performance.now() - draggedObject.lastShakeTime > 1000) {
+            const weights = ['weight1', 'weight5', 'weight10', 'mystery'];
+            const currentIndex = weights.indexOf(draggedObject.ball8State);
+            const newIndex = (currentIndex + 1) % weights.length;
+            draggedObject.ball8State = weights[newIndex];
+
+            // Update mass based on state
+            switch (draggedObject.ball8State) {
+                case 'weight1': draggedObject.mass = 1; break;
+                case 'weight5': draggedObject.mass = 5; break;
+                case 'weight10': draggedObject.mass = 10; break;
+                default: draggedObject.mass = 5; // Mystery defaults to 5
+            }
+
+            draggedObject.shakeIntensity = 0;
+            draggedObject.lastShakeTime = performance.now();
+        }
+
+        // Decay shake intensity over time
+        draggedObject.shakeIntensity *= 0.95;
+    }
+
     draggedObject.vx = 0;
     draggedObject.vy = 0;
 }
@@ -767,6 +824,7 @@ canvas.addEventListener('mouseleave', onPointerUp);
 canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onPointerDown(e); }, { passive: false });
 canvas.addEventListener('touchmove', (e) => { e.preventDefault(); onPointerMove(e); }, { passive: false });
 canvas.addEventListener('touchend', onPointerUp);
+canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent right-click menu
 
 // Keyboard handler
 window.addEventListener('keydown', (e) => {
