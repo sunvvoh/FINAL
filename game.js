@@ -652,7 +652,6 @@ function generateLevel(levelNum) {
         const numNormal = 3;
         const numFeathers = 2;
         const numTissueBoxes = 2;
-        const numMagic8Balls = 2;
         const numAnvils = 1;
 
         for (let i = 0; i < numNormal; i++) {
@@ -665,9 +664,7 @@ function generateLevel(levelNum) {
         for (let i = 0; i < numTissueBoxes; i++) {
             movableObjects.push(createTissueBox());
         }
-        for (let i = 0; i < numMagic8Balls; i++) {
-            movableObjects.push(createMagic8Ball());
-        }
+        // Magic 8 ball removed per user request
         for (let i = 0; i < numAnvils; i++) {
             movableObjects.push(createAnvil());
         }
@@ -693,14 +690,9 @@ function generateLevel(levelNum) {
             }
         }
 
-        if (levelNum >= 7) {
-            const numMagic8Balls = 1 + Math.floor((levelNum - 6) / 4);
-            for (let i = 0; i < numMagic8Balls; i++) {
-                movableObjects.push(createMagic8Ball());
-            }
-        }
+        // Magic 8 ball removed per user request
 
-        if (levelNum >= 10) {
+        if (levelNum >= 7) {
             const numAnvils = 1;
             for (let i = 0; i < numAnvils; i++) {
                 movableObjects.push(createAnvil());
@@ -951,15 +943,7 @@ function onPointerMove(e) {
             }
         }
 
-        // Magic 8 ball shake detection (time-based)
-        if (draggedObject.type === 'magic8ball') {
-            const dx = draggedObject.x - oldX;
-            const dy = draggedObject.y - oldY;
-            const speed = Math.sqrt(dx * dx + dy * dy);
-
-            // Consider it "shaking" if moving fast enough
-            draggedObject.isShaking = speed > 5;
-        }
+        // Magic 8 ball removed per user request
 
         draggedObject.vx = 0;
         draggedObject.vy = 0;
@@ -1060,15 +1044,7 @@ window.addEventListener('keydown', (e) => {
                 objects.push(tissueBox);
             }
 
-            // Spawn 2 magic 8 balls
-            for (let i = 0; i < 2; i++) {
-                const magic8ball = createMagic8Ball();
-                const randomX = margin + Math.random() * spawnWidth;
-                magic8ball.x = randomX;
-                magic8ball.y = groundY - magic8ball.radius;
-                magic8ball.grounded = true;
-                objects.push(magic8ball);
-            }
+            // Magic 8 ball removed per user request
 
             // Spawn 1 anvil
             const anvil = createAnvil();
@@ -1680,41 +1656,7 @@ function animate() {
         for (const obj of objects) {
             obj.update(dt);
 
-            // Magic 8 ball shake time tracking
-            if (obj.type === 'magic8ball' && obj.isShaking && obj.isDragging) {
-                obj.shakeTime += dt;
-
-                // After 2 seconds of shaking, change weight randomly
-                if (obj.shakeTime >= 2.0 && performance.now() - obj.lastWeightChangeTime > 2000) {
-                    const weights = ['mystery', 'weight1', 'weight5', 'weight10'];
-                    // Pick random weight different from current
-                    let newState = obj.ball8State;
-                    while (newState === obj.ball8State) {
-                        newState = weights[Math.floor(Math.random() * weights.length)];
-                    }
-                    obj.ball8State = newState;
-
-                    // Update mass based on state
-                    switch (obj.ball8State) {
-                        case 'weight1': obj.mass = 1; break;
-                        case 'weight5': obj.mass = 5; break;
-                        case 'weight10': obj.mass = 10; break;
-                        default: obj.mass = 0; // Mystery has no weight
-                    }
-
-                    obj.shakeTime = 0;
-                    obj.lastWeightChangeTime = performance.now();
-                    obj.glowAlpha = 1.0; // Trigger glow effect
-                }
-            } else if (obj.type === 'magic8ball' && !obj.isShaking) {
-                // Reset shake time if not shaking
-                obj.shakeTime = Math.max(0, obj.shakeTime - dt * 2); // Decay twice as fast
-            }
-
-            // Decay glow effect for magic 8 ball
-            if (obj.type === 'magic8ball' && obj.glowAlpha > 0) {
-                obj.glowAlpha = Math.max(0, obj.glowAlpha - dt * 2); // Fade over 0.5 seconds
-            }
+            // Magic 8 ball removed per user request
         }
 
         // Update camera shake
