@@ -1054,17 +1054,38 @@ function spawnDuplicates() {
     for (let i = 0; i < count; i++) {
         const offsetX = (Math.random() - 0.5) * 100;
         const offsetY = -100 - (i * 50);
-        
-        const newObj = new PhysicsObject(
-            template.centerX + offsetX,
-            offsetY,
-            template.width,
-            template.height,
-            template.mass,
-            template.color,
-            template.isCircle,
-            false
-        );
+
+        let newObj;
+
+        // Duplicate special objects properly
+        if (template.type === 'feather') {
+            newObj = createFeather();
+        } else if (template.type === 'tissuebox') {
+            newObj = createTissueBox();
+            newObj.tissuesRemaining = template.tissuesRemaining;
+            newObj.mass = template.mass;
+        } else if (template.type === 'magic8ball') {
+            newObj = createMagic8Ball();
+            newObj.ball8State = template.ball8State;
+            newObj.mass = template.mass;
+        } else if (template.type === 'anvil') {
+            newObj = createAnvil();
+        } else {
+            // Normal objects
+            newObj = new PhysicsObject(
+                0,
+                0,
+                template.width,
+                template.height,
+                template.mass,
+                template.color,
+                template.isCircle,
+                false
+            );
+        }
+
+        newObj.x = template.centerX + offsetX - (newObj.isCircle ? 0 : newObj.width/2);
+        newObj.y = offsetY;
         newObj.vy = 50;
         objects.push(newObj);
     }
@@ -1250,15 +1271,15 @@ function drawScale() {
     const rightX = getRightPanX();
     const rightY = getRightPanY();
 
-    // Calculate beam end positions (where chains attach)
-    const beamY = pillarTop + 25;
+    // Calculate beam end positions (where chains attach) - beam moved up 20px
+    const beamY = pillarTop + 5;  // Was 25, now 5 (moved up 20px)
     const leftBeamX = baseX + Math.cos(-scale.angle) * (-scale.armLength) - Math.sin(-scale.angle) * 0;
     const leftBeamY = beamY + Math.sin(-scale.angle) * (-scale.armLength) + Math.cos(-scale.angle) * 0;
     const rightBeamX = baseX + Math.cos(-scale.angle) * scale.armLength - Math.sin(-scale.angle) * 0;
     const rightBeamY = beamY + Math.sin(-scale.angle) * scale.armLength + Math.cos(-scale.angle) * 0;
 
     // Draw chains BEHIND beam (1 chain per pan - hanging from beam end to pan center)
-    ctx.strokeStyle = '#4a4a4a';      // Dark gray chains
+    ctx.strokeStyle = '#4C5175';      // Updated chain color
     ctx.lineWidth = 4;
 
     // Left pan chain
@@ -1276,7 +1297,7 @@ function drawScale() {
     // Beam - using BEAM image (drawn OVER chains)
     if (images.beam) {
         ctx.save();
-        ctx.translate(baseX, pillarTop + 25);
+        ctx.translate(baseX, pillarTop + 5);  // Moved up 20px (was 25)
         ctx.rotate(-scale.angle);
         const beamWidth = scale.armLength * 2 + 100;
         const beamHeight = 40;
@@ -1304,9 +1325,19 @@ function drawScale() {
 }
 
 function drawDuplicationStation() {
-    ctx.fillStyle = '#555577';
-    ctx.fillRect(dupStation.x - dupStation.panWidth/2, dupStation.y - dupStation.panHeight, 
-                dupStation.panWidth, dupStation.panHeight);
+    // Use PAN image for duplication pad
+    if (images.pan) {
+        ctx.drawImage(images.pan,
+                     dupStation.x - dupStation.panWidth/2,
+                     dupStation.y - dupStation.panHeight,
+                     dupStation.panWidth,
+                     dupStation.panHeight);
+    } else {
+        // Fallback
+        ctx.fillStyle = '#555577';
+        ctx.fillRect(dupStation.x - dupStation.panWidth/2, dupStation.y - dupStation.panHeight,
+                    dupStation.panWidth, dupStation.panHeight);
+    }
 
     ctx.fillStyle = '#7777aa';
     ctx.fillRect(dupStation.x - dupStation.panWidth/2 - 5, dupStation.y - dupStation.panHeight - dupStation.rimHeight,
@@ -1361,10 +1392,9 @@ function drawDuplicationStation() {
 }
 
 function drawGround() {
-    // Modernist color scheme - cream/beige tones
-    const bgColor = '#e8e4d9';        // Warm cream
-    const groundColor = '#d4cfc3';     // Lighter beige
-    const gridColor = '#c4bfb3';       // Subtle grid
+    // Updated color scheme
+    const bgColor = '#FFF5E9';        // New background color
+    const groundColor = '#f7e1c9';     // New floor color
 
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, groundY);
@@ -1373,7 +1403,7 @@ function drawGround() {
     ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
 
     // Subtle grid lines
-    ctx.strokeStyle = gridColor;
+    ctx.strokeStyle = '#e8dcc8';
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.3;
     for (let x = 0; x < canvas.width; x += 50) {
